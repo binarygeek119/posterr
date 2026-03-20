@@ -37,8 +37,8 @@ class Cache {
   }
 
   /**
-   * @desc Downloads the tv mp3 file from the Plex server
-   * @param {string} url - the fully qualified URL for the plex media file
+   * @desc Downloads an mp3 from a URL (e.g. Plex theme URL or tvthemes.plexapp.com)
+   * @param {string} url - the fully qualified URL for the media file
    * @param {string} fileName - the filename to download and save. this in the format of tvdbid.mp3
    * @returns nothing
    */

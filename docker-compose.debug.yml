@@ -1,4 +1,6 @@
-version: '3.4'
+# Debug compose — same host-gateway helper as docker-compose.yml for media servers on the host.
+
+version: "3.8"
 
 services:
   posterr:
@@ -14,5 +16,5 @@ services:
       - 3000:3000
       - 9229:9229
     command: ["node", "--inspect=0.0.0.0:9229", "index.js"]
-
-
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

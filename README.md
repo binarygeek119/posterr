@@ -1,5 +1,8 @@
 # Posterr
-## Media display software for Plex, Sonarr, Radarr, and Readarr. (Just like the display screens in movie theatre foyers)
+## Media display software for Plex, Jellyfin, Emby, Kodi, Sonarr, Radarr, and Readarr. (Just like the display screens in movie theatre foyers)
+
+> **About this repository**  
+> This is an **AI-assisted, modified** version of [Posterr](https://github.com/petersem/posterr). The **original developer(s) and the upstream project did the real work**—design, architecture, and years of maintenance. This tree is intentionally a **test / sandbox app** for another developer to practice extending Posterr-style features and to learn how to do that **the right way** (clear changes, tests, and eventual contribution back to the real project if desired). For production use, prefer **[upstream Posterr](https://github.com/petersem/posterr)**.
 
 ![Docker Pulls](https://img.shields.io/docker/pulls/petersem/posterr) 
 ![Docker Image Size (tag)](https://img.shields.io/docker/image-size/petersem/posterr/latest?logo=docker) 
@@ -23,7 +26,7 @@
 ---
 ## Features
  - Displays movies, shows, music poster for what's currently playing.
- - Displays random (on-demand) titles from multiple Plex libraries.
+ - Displays random (on-demand) titles from multiple libraries (Plex, Jellyfin, Emby, or Kodi video sources).
  - Displays custom pictures, background art, and themes
  - Shows coming soon titles from Sonarr (or Season premieres).
  - Shows coming soon titles from Radarr.
@@ -45,7 +48,7 @@
 ---
 ## Prerequisites
 ### Mandatory
- - Plex
+ - Plex, Jellyfin, Emby, or Kodi (settings → server type; Kodi needs HTTP JSON-RPC enabled)
 
 ### Optional
  - Sonarr v3.0
@@ -61,8 +64,8 @@ Create the following directories in your docker folder:
  - ./docker/posterr/config
  - ./docker/posterr/custom
 
-```ya
-version: '2.4'
+```yaml
+version: "3.8"
 
 services:
   posterr:
@@ -77,7 +80,28 @@ services:
     ports:
       - 9876:3000
     restart: unless-stopped
+    # Linux: reach Plex/Jellyfin/Emby/Kodi running on the Docker host (not needed on all setups).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 ```
+
+#### Media servers (Plex, Jellyfin, Emby, Kodi) in Docker
+Posterr only needs **outbound HTTP(S)** to your server — no extra packages in the image.
+
+| Where the server runs | What to enter as **host** in Posterr settings |
+|----------------------|-----------------------------------------------|
+| **Another container** on the same Compose network | The **service name** (e.g. `jellyfin`, `emby`) and that service’s port (often `8096`). |
+| **Same machine as Docker, outside containers** (typical Kodi / bare-metal Plex) | `host.docker.internal` (with `extra_hosts` as above on **Linux**; Docker Desktop often works without it). |
+| **Another machine on your LAN** | That machine’s IP or hostname (container must be able to route to it). |
+
+**Kodi:** set server type to **Kodi**, port to Kodi’s **Web server / JSON-RPC** port (often **8080**), and **Token** only if HTTP auth is enabled in Kodi (otherwise leave blank).
+
+Example **Jellyfin + Posterr** on one stack: see [`docker-compose.media-servers.example.yml`](docker-compose.media-servers.example.yml). Start with:
+
+`docker compose -f docker-compose.yml -f docker-compose.media-servers.example.yml up -d`
+
+Then set server type to **Jellyfin**, host **`jellyfin`**, port **8096**, and your API key.
+
 ### <ins>Docker CLI (X86, ARM64)</ins>
 Create the following directories in your docker folder:
  - ./docker/posterr
@@ -90,9 +114,12 @@ docker run -d --name posterr \
 -v ~/docker/posterr/config:/usr/src/app/config \
 -v ~/docker/posterr/custom:/usr/src/app/public/custom \
 -e TZ=Australia/Brisbane \
+--add-host=host.docker.internal:host-gateway \
 --restart=always \
 petersem/posterr
 ```
+
+On **Docker Engine 20.10+**, `--add-host=host.docker.internal:host-gateway` lets Posterr reach Plex/Jellyfin/Emby/Kodi running on the **host** (Linux). Omit if you only use container-to-container names on a custom network.
 
 #### Details
 |Option|Details|
@@ -102,6 +129,7 @@ petersem/posterr
 |/docker/posterr/custom|This is required for custom pictures (and other custom media in the future)|
 |Ports|Change first part to a different port if needed. e.g. 9876:3000|
 |BASEPATH|_"/path"_ Use this for reverse proxy setups which require a base path value. **This line can be left out, or value left blank** if you dont use alternate paths. |
+|extra_hosts `host.docker.internal`|Helps Posterr reach **Jellyfin, Emby, Kodi, or Plex on the Docker host** from inside the container (Linux). Requires Docker Engine **20.10+**. |
 
 ### <ins>Unraid</ins>
  - Use the Posterr template in community apps. (Being replaced with new version)
@@ -143,7 +171,7 @@ Get to the settings page in a number of ways:
  - Browser connectivity checks and auto-reconnect when the Posterr app restarts. (eg During container updates) 
  - Supports screen resolution heights from 320 pixels to around 3500 pixels. 
  - Supports reverse proxy setup for wildcard dns or alternate base path.
- - Built-in recovery features should the Poster app, or Plex, go offline.
+ - Built-in recovery features should the Poster app, or your media server, go offline.
 
  > Please see the [Posterr Wiki](https://github.com/petersem/posterr/wiki/Posterr-Configuration) for more information.
 
@@ -177,11 +205,11 @@ Posterr uses the following:
  - Jquery
  - Bootstrap
  - Font-Awesome
- - Plex (via PlexAPI)
+ - Plex (PlexAPI); Jellyfin/Emby (REST); Kodi (JSON-RPC over HTTP)
  - Sonarr (via API)
  - Radarr (via API)
  - Readarr (via API)
- - Posters and artwork from Plex, TVDB and TMDB.
+ - Posters and artwork from your media server, TVDB and TMDB.
  - Awtrix (via API)
 
 ---

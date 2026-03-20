@@ -2,6 +2,7 @@ const fs = require("fs");
 const fsp = require("fs").promises;
 const DEFAULT_SETTINGS = require("../../consts");
 const util = require("../core/utility");
+const { requiresMediaServerCredential } = require("../mediaservers/mediaServerFactory");
 
 /**
  * @desc settings object is used to get and set all settings for poster
@@ -17,6 +18,7 @@ class Settings {
     this.fade = DEFAULT_SETTINGS.fade;
     this.hideSettingsLinks = DEFAULT_SETTINGS.hideSettingsLinks;
     this.theaterRoomMode = DEFAULT_SETTINGS.theaterRoomMode;
+    this.mediaServerType = DEFAULT_SETTINGS.mediaServerType;
     this.plexIP = DEFAULT_SETTINGS.plexIP;
     this.plexHTTPS = DEFAULT_SETTINGS.plexHTTPS;
     this.plexPort = DEFAULT_SETTINGS.plexPort;
@@ -95,15 +97,18 @@ class Settings {
     let hasChanged = false;
     let SettingChanged;
     try {
-      // only worry about required Plex settings. (other settings can remain default or be blank)
-      if (this.plexIP !== "" && this.plexPort !== "" && this.plexToken !== "") {
+      // only worry about required media server settings (Kodi may omit token if no HTTP auth)
+      const tokenOk =
+        !requiresMediaServerCredential(this.mediaServerType) ||
+        (this.plexToken !== undefined && this.plexToken !== "");
+      if (this.plexIP !== "" && this.plexPort !== "" && tokenOk) {
         hasChanged = true;
         throw SettingChanged;
       } else {
         let now = new Date();
         console.log(
           now.toISOString().split("T")[0] +
-            " INVALID PLEX SERVER SETTINGS - Please visit setup page to resolve"
+            " INVALID MEDIA SERVER SETTINGS - Please visit setup page to resolve"
         );
       }
     } catch (e) {
@@ -148,6 +153,7 @@ class Settings {
       if(readSettings.recentlyAddedDays==undefined) readSettings.recentlyAddedDays = 0;
       if(readSettings.enableAwtrix==undefined) readSettings.enableAwtrix = 'false';
       if(readSettings.rotate==undefined) readSettings.rotate = 'false';
+      if(readSettings.mediaServerType==undefined) readSettings.mediaServerType = 'plex';
     } catch (ex) {
       // do nothing if error as it reads ok anyhow
       let d = new Date();
@@ -244,14 +250,19 @@ class Settings {
     else this.hideSettingsLinks = "false";
     if (jsonObject.theaterRoomMode) this.theaterRoomMode = jsonObject.theaterRoomMode;
     else this.theaterRoomMode = "false";
+    if (jsonObject.mediaServerType) this.mediaServerType = jsonObject.mediaServerType;
+    else this.mediaServerType = cs.mediaServerType != undefined ? cs.mediaServerType : DEFAULT_SETTINGS.mediaServerType;
     if (jsonObject.plexIP) this.plexIP = jsonObject.plexIP;
     else this.plexIP = cs.plexIP;
     if (jsonObject.plexHTTPSSwitch) this.plexHTTPS = jsonObject.plexHTTPSSwitch;
     else this.plexHTTPS = "false";
     if (jsonObject.plexPort) this.plexPort = jsonObject.plexPort;
     else this.plexPort = cs.plexPort;
-    if (jsonObject.plexToken) this.plexToken = jsonObject.plexToken;
-    else this.plexToken = cs.plexToken;
+    if (jsonObject.plexToken !== undefined && jsonObject.plexToken !== null) {
+      this.plexToken = jsonObject.plexToken;
+    } else {
+      this.plexToken = cs.plexToken;
+    }
     if (jsonObject.plexLibraries)
       this.onDemandLibraries = jsonObject.plexLibraries;
     else this.onDemandLibraries = cs.onDemandLibraries;
