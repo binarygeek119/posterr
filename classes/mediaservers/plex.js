@@ -16,8 +16,9 @@ const { error } = require("jquery");
  * @returns {object} Plex API client object
  */
 class Plex {
-  constructor({ HTTPS, plexIP, plexPort, plexToken }) {
-    this.https = HTTPS;
+  constructor({ HTTPS, plexHTTPS, plexIP, plexPort, plexToken }) {
+    const useHttps = HTTPS !== undefined && HTTPS !== null ? HTTPS : plexHTTPS;
+    this.https = useHttps;
     this.plexIP = plexIP;
     this.plexPort = plexPort;
     this.plexToken = plexToken;
@@ -27,7 +28,7 @@ class Plex {
     this.client = new plexAPI({
       hostname: plexIP,
       port: plexPort,
-      https: HTTPS,
+      https: useHttps === true || useHttps === "true",
       token: plexToken,
     });
     //this.client.timeout = 0;

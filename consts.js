@@ -6,6 +6,7 @@ const DEFAULT_SETTINGS = {
   fade : "true",
   hideSettingsLinks : "false",
   theaterRoomMode : "false",
+  mediaServerType : "plex",
   plexIP : "",
   plexHTTPS : "false",
   plexPort : 32400,

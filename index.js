@@ -6,7 +6,6 @@ const cookieParser = require("cookie-parser");
 const session = require("express-session");
 const { check, validationResult } = require("express-validator");
 //const user = require('./routes/user.routes');
-const pms = require("./classes/mediaservers/plex");
 const vers = require("./classes/core/ver");
 const glb = require("./classes/core/globalPage");
 const core = require("./classes/core/cache");
@@ -26,6 +25,11 @@ const triv = require("./classes/custom/trivia");
 const links = require("./classes/custom/links");
 const awtrix = require("./classes/custom/awtrix");
 const movieTrailers = require("./classes/arr/radarrtrailers");
+const {
+  getMediaServerClass,
+  getMediaServerShortLabel,
+  requiresMediaServerCredential,
+} = require("./classes/mediaservers/mediaServerFactory");
 
 // just in case someone puts in a / for the basepath value
 if (process.env.BASEPATH == "/") process.env.BASEPATH = "";
@@ -91,8 +95,8 @@ let isReadarrEnabled = false;
 let isOnDemandEnabled = false;
 let isSleepEnabled = false;
 let isPicturesEnabled = false;
-let isPlexEnabled = false;
-let isPlexUnavailable = false;
+let isMediaServerEnabled = false;
+let isMediaServerUnavailable = false;
 let isSonarrUnavailable = false;
 let isRadarrUnavailable = false;
 let isReadarrUnavailable = false;
@@ -471,13 +475,13 @@ async function loadNowScreening() {
   clearInterval(nowScreeningClock);
 
   // stop timers dont run if disabled
-  if (!isPlexEnabled) {
+  if (!isMediaServerEnabled) {
     nsCards = [];
     return nsCards;
   }
 
-  // load MediaServer(s) (switch statement for different server settings server option - TODO)
-  let ms = new pms({
+  const Pms = getMediaServerClass(loadedSettings.mediaServerType);
+  let ms = new Pms({
     plexHTTPS: loadedSettings.plexHTTPS,
     plexIP: loadedSettings.plexIP,
     plexPort: loadedSettings.plexPort,
@@ -638,10 +642,10 @@ async function loadNowScreening() {
         }
       }
 
-    // restore defaults if plex now available after an error
-    if (isPlexUnavailable) {
-      console.log("✅ Plex connection restored - defualt poll timers restored");
-      isPlexUnavailable = false;
+    // restore defaults if media server is available again after an error
+    if (isMediaServerUnavailable) {
+      console.log("✅ Media server connection restored - default poll timers restored");
+      isMediaServerUnavailable = false;
     }
   } catch (err) {
     let now = new Date();
@@ -651,7 +655,7 @@ async function loadNowScreening() {
       "✘✘ WARNING ✘✘ - Next Now Screening query will be delayed by 1 minute:",
       "(" + pollInterval / 1000 + " seconds)"
     );
-    isPlexUnavailable = true;
+    isMediaServerUnavailable = true;
   }
 
   // Concatenate cards for all objects load now showing and on-demand cards, else just on-demand (if present)
@@ -828,9 +832,9 @@ async function loadOnDemand() {
     return odCards;
   }
 
-  // changing timings if plex unavailable or ns not working
+  // changing timings if media server unavailable or NS not working
   let odCheckMinutes = loadedSettings.onDemandRefresh;
-  if (isPlexUnavailable) {
+  if (isMediaServerUnavailable) {
     odCheckMinutes = 1;
     console.log("✘✘ WARNING ✘✘ - Next on-demand query will run in 1 minute.");
     // restart interval timer
@@ -839,8 +843,8 @@ async function loadOnDemand() {
     return odCards;
   }
 
-  // load MediaServer(s) (switch statement for different server settings server option - TODO)
-  let ms = new pms({
+  const PmsOd = getMediaServerClass(loadedSettings.mediaServerType);
+  let ms = new PmsOd({
     plexHTTPS: loadedSettings.plexHTTPS,
     plexIP: loadedSettings.plexIP,
     plexPort: loadedSettings.plexPort,
@@ -904,7 +908,7 @@ async function loadSettings() {
 async function checkEnabled() {
   // reset all enabled variables
   isOnDemandEnabled = false;
-  isPlexEnabled = false;
+  isMediaServerEnabled = false;
   isSonarrEnabled = false;
   isRadarrEnabled = false;
   isNowShowingEnabled = false;
@@ -982,21 +986,25 @@ async function checkEnabled() {
     isSleepEnabled = false;
   }
 
-  // check Plex
+  // check media server connection fields (Kodi may use empty token if HTTP auth disabled)
+  const _tokenOk =
+    !requiresMediaServerCredential(loadedSettings.mediaServerType) ||
+    (loadedSettings.plexToken !== undefined && loadedSettings.plexToken !== "");
   if (
-    (loadedSettings.plexIP !== undefined && loadedSettings.plexIP !== '') &&
-    (loadedSettings.plexToken !== undefined && loadedSettings.plexToken !== '') &&
-    (loadedSettings.plexPort !== undefined && loadedSettings.plexPort !== undefined)
+    loadedSettings.plexIP !== undefined &&
+    loadedSettings.plexIP !== "" &&
+    _tokenOk &&
+    loadedSettings.plexPort !== undefined &&
+    loadedSettings.plexPort !== ""
   ) {
-    isPlexEnabled = true;
-  }
-  else{
-    isPlexEnabled = false;
+    isMediaServerEnabled = true;
+  } else {
+    isMediaServerEnabled = false;
   }
   
   // check on-demand
   if (loadedSettings.onDemandLibraries !== undefined &&
-    isPlexEnabled &&
+    isMediaServerEnabled &&
     loadedSettings.numberOnDemand !== undefined &&
     //loadedSettings.numberOnDemand !== 0 &&
     loadedSettings.enableOD !== 'false'
@@ -1091,8 +1099,10 @@ async function checkEnabled() {
   
   console.log(
     `--- Enabled Status ---
-   Plex: ` +
-    isPlexEnabled +
+   Media server (` +
+    (loadedSettings.mediaServerType || "plex") +
+    `): ` +
+    isMediaServerEnabled +
     `
    Now Showing: ` +
     isNowShowingEnabled +
@@ -1540,23 +1550,42 @@ app.get(BASEURL + "/debug/ping", (req, res) => {
   res.render("debug", { settings: loadedSettings, version: pjson.version, baseUrl: BASEURL });
 });
 
-app.get(BASEURL + "/debug/plexns", (req, res) => {
-  console.log(' ');
-  console.log("** PLEX 'NOW SCREENING' CHECK **");
-  console.log('-------------------------------------------------------');
-  let test = new health(loadedSettings);
-  test.PlexNSCheck();
-  res.render("debug", { settings: loadedSettings, version: pjson.version, baseUrl: BASEURL });
-});
+async function debugMediaServerNs(req, res) {
+  const label = getMediaServerShortLabel(
+    loadedSettings && loadedSettings.mediaServerType
+  );
+  console.log(" ");
+  console.log("** " + label.toUpperCase() + " 'NOW SCREENING' CHECK **");
+  console.log("-------------------------------------------------------");
+  const test = new health(loadedSettings);
+  await test.PlexNSCheck();
+  res.render("debug", {
+    settings: loadedSettings,
+    version: pjson.version,
+    baseUrl: BASEURL,
+  });
+}
 
-app.get(BASEURL + "/debug/plexod", (req, res) => {
-  console.log(' ');
-  console.log("** PLEX 'ON-DEMAND' CHECK **");
-  console.log('-------------------------------------------------------');
-  let test = new health(loadedSettings);
-  test.PlexODCheck();
-  res.render("debug", { settings: loadedSettings, version: pjson.version, baseUrl: BASEURL });
-});
+async function debugMediaServerOd(req, res) {
+  const label = getMediaServerShortLabel(
+    loadedSettings && loadedSettings.mediaServerType
+  );
+  console.log(" ");
+  console.log("** " + label.toUpperCase() + " 'ON-DEMAND' CHECK **");
+  console.log("-------------------------------------------------------");
+  const test = new health(loadedSettings);
+  await test.PlexODCheck();
+  res.render("debug", {
+    settings: loadedSettings,
+    version: pjson.version,
+    baseUrl: BASEURL,
+  });
+}
+
+app.get(BASEURL + "/debug/medians", debugMediaServerNs);
+app.get(BASEURL + "/debug/mediaod", debugMediaServerOd);
+app.get(BASEURL + "/debug/plexns", debugMediaServerNs);
+app.get(BASEURL + "/debug/plexod", debugMediaServerOd);
 
 app.get(BASEURL + "/debug/sonarr", (req, res) => {
   console.log(' ');
@@ -1744,14 +1773,14 @@ app.post(
         return true;
       })
       .withMessage("'Slide Duration' is required and must be 5 or more"),
-    check("plexIP").not().isEmpty().withMessage("'Plex IP' is required"),
+    check("plexIP").not().isEmpty().withMessage("'Media server address' is required"),
     check("plexPort")
       .not()
       .isEmpty()
-      .withMessage("'Plex port' is required. (setting default)")
+      .withMessage("'Media server port' is required. (setting default)")
       .custom((value) => {
         if (parseInt(value) === "NaN") {
-          throw new Error("'Plex Port' must be a number");
+          throw new Error("'Media server port' must be a number");
         }
         // Indicates the success of this synchronous custom validator
         return true;
@@ -1804,7 +1833,15 @@ app.post(
         // Indicates the success of this synchronous custom validator
         return true;
       }),
-    check("plexToken").not().isEmpty().withMessage("'Plex token' is required"),
+    check("plexToken").custom((value, { req }) => {
+      if (!requiresMediaServerCredential(req.body.mediaServerType || "plex")) {
+        return true;
+      }
+      if (value === undefined || value === null || String(value).trim() === "") {
+        throw new Error("'Media server token / API key' is required");
+      }
+      return true;
+    }),
     check("enableSleep")
       .custom((value, { req }) => {
         if(value == "true"){
@@ -1853,7 +1890,11 @@ app.post(
       shuffleSwitch: req.body.shuffleSwitch,
       hideSettingsLinks: req.body.hideSettingsLinks,
       theaterRoomMode: req.body.theaterRoomMode,
-      plexToken: req.body.plexToken,
+      mediaServerType: req.body.mediaServerType || "plex",
+      plexToken:
+        req.body.plexToken !== undefined && req.body.plexToken !== null
+          ? req.body.plexToken
+          : "",
       plexIP: req.body.plexIP,
       plexHTTPSSwitch: req.body.plexHTTPSSwitch,
       plexPort: req.body.plexPort ? parseInt(req.body.plexPort) : DEFAULT_SETTINGS.plexPort,

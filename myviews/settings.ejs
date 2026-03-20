@@ -543,7 +543,7 @@
               <div class="panel-heading" role="tab" id="headingThree">
                 <h4 class="panel-title">
                   <a class="collapsed" data-toggle="collapse" data-parent="#accordion" href="#collapseThree" aria-expanded="false" aria-controls="collapseThree">
-                    PLEX <i class="accordion_icon fal fa-plus"></i>
+                    MEDIA SERVER (PLEX / JELLYFIN / EMBY / KODI) <i class="accordion_icon fal fa-plus"></i>
                   </a>
                 </h4>
               </div>
@@ -551,12 +551,23 @@
                 <div class="panel-body">
 
                   <div class="form-group">
+                    <label for="mediaServerType">Server type</label>
+                    <select class="custom-select" name="mediaServerType" id="mediaServerType">
+                      <% var _mst = (typeof formData !== 'undefined' && errors && formData.mediaServerType) ? formData.mediaServerType : (settings.mediaServerType || 'plex'); %>
+                      <option value="plex" <% if (_mst === 'plex') { %>selected<% } %>>Plex</option>
+                      <option value="jellyfin" <% if (_mst === 'jellyfin') { %>selected<% } %>>Jellyfin</option>
+                      <option value="emby" <% if (_mst === 'emby') { %>selected<% } %>>Emby</option>
+                      <option value="kodi" <% if (_mst === 'kodi') { %>selected<% } %>>Kodi</option>
+                    </select>
+                    <small class="form-text text-muted">Jellyfin/Emby: API key in server dashboard. Kodi: enable <strong>Settings → Services → Control → Allow remote control via HTTP</strong>; use JSON-RPC port (often 8080). Token: leave blank if no login, or <code>password</code> / <code>username:password</code> for HTTP auth.</small>
+                  </div>
+
+                  <div class="form-group">
                   <div class="custom-control custom-control-nolabel custom-switch ml-auto">
                     <input type="checkbox" class="custom-control-input" name="plexHTTPSSwitch" id="plexHTTPSSwitch"
                      value="true" <% if(typeof formData !== 'undefined' && errors){%><%=formData.plexHTTPSSwitch ? 'checked' : '' %><%}else{%><%=(settings.plexHTTPS == 'true') ? 'checked' : '' %><%}%>>
                     <label class="custom-control-label" for="plexHTTPSSwitch">HTTPS Connection</label>
-                    <small id="plexHTTPSHelp" class="form-text text-muted">Enable if Plex requires a HTTPS 'secure'
-                      connection.</small>
+                    <small id="plexHTTPSHelp" class="form-text text-muted">Enable if your media server only allows HTTPS.</small>
                   </div>
                 </div>
 
@@ -564,23 +575,22 @@
                   <label for="plexIP">Server IP or Domain Name</label>
                   <input type="text" class="form-control" id="plexIP" name="plexIP" aria-describedby="plexIPHelp"
                     placeholder="n.n.n.n" value="<% if(typeof formData !== 'undefined' && errors){%><%=formData.plexIP%>"<%}else{%><%=settings.plexIP%>"<%}%>>
-                  <small id="plexIPHelp" class="form-text text-muted">Enter the Plex IP or Domain Name.</small>
+                  <small id="plexIPHelp" class="form-text text-muted">Host for Plex, Jellyfin, Emby, or Kodi (same setting for all types).</small>
                 </div>
 
                 <div class="form-group">
                   <label for="plexIP">Server Port</label>
                   <input type="text" class="form-control" id="plexIPort" name="plexPort" aria-describedby="plexPortHelp"
-                    placeholder="usually port 32400" value="<% if(typeof formData !== 'undefined' && errors){%><%=formData.plexPort%>"<%}else{%><%=settings.plexPort%>"<%}%>>
-                  <small id="plexPortHelp" class="form-text text-muted">Enter the server port. (usually 32400).</small>
+                    placeholder="32400 / 8096" value="<% if(typeof formData !== 'undefined' && errors){%><%=formData.plexPort%>"<%}else{%><%=settings.plexPort%>"<%}%>>
+                  <small id="plexPortHelp" class="form-text text-muted">Plex 32400; Jellyfin/Emby 8096; Kodi JSON-RPC often 8080.</small>
                 </div>
 
                 <div class="form-group">
-                  <label for="plexToken">Plex Token</label>
+                  <label for="plexToken">Token / API key</label>
                   <input type="password" class="form-control" name="plexToken" id="plexToken" aria-describedby="plexToken"
-                    placeholder="Plex Token" value="<% if(typeof formData !== 'undefined' && errors){%><%=formData.plexToken%>"<%}else{%><%=settings.plexToken%>"<%}%>>
-                  <small id="plexTokenHelp" class="form-text text-muted">Needed to communicate with your Plex server.
-                    (<a href="https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/"
-                      target="_blank">details</a>)</small>
+                    placeholder="Token or API key" value="<% if(typeof formData !== 'undefined' && errors){%><%=formData.plexToken%>"<%}else{%><%=settings.plexToken%>"<%}%>>
+                  <small id="plexTokenHelp" class="form-text text-muted">Plex: <a href="https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/"
+                      target="_blank">X-Plex-Token</a>. Jellyfin/Emby: API key. Kodi: optional HTTP auth (<code>kodi:password</code> or just password, user defaults to <code>kodi</code>).</small>
                 </div>
                   
                 </div>
@@ -674,7 +684,7 @@
                 <label for="filterDevices">Filter by device(s)</label>
                 <input type="text" class="form-control" id="filterDevices" name="filterDevices" aria-describedby="filterDevicesHelp"
                   placeholder="examples -> chromecast,chrome,Roku Ultra - XYZ123456789" value="<% if(typeof formData !== 'undefined' && errors){%><%=formData.filterDevices%>"<%}else{%><%=settings.filterDevices%>"<%}%>>
-                  <small id="filterDevicesHelp" class="form-text text-muted">Enter device names to include (Comma seperated and no spaces, except in the name. Leave blank for all devices)</small>
+                  <small id="filterDevicesHelp" class="form-text text-muted">Enter device names to include (comma separated; spaces only inside a name; leave blank for all). With <strong>Server type: Kodi</strong>, the reported device name is always <code>Kodi</code>.</small>
               </div>
 
               <div class="form-group">
@@ -688,7 +698,7 @@
                 <label for="excludeLibs">Exclude libraries</label>
                 <input type="text" class="form-control" id="excludeLibs" name="excludeLibs" aria-describedby="excludeLibsHelp"
                   placeholder="examples -> TV Shows,Movies" value="<% if(typeof formData !== 'undefined' && errors){%><%=formData.excludeLibs%>"<%}else{%><%=settings.excludeLibs%>"<%}%>>
-                  <small id="excludeLibsHelp" class="form-text text-muted">Enter any libraries to exclude (Comma seperated and no leading or trailing spaces. Leave blank to include all libraries)</small>
+                  <small id="excludeLibsHelp" class="form-text text-muted">Now screening: hide titles from these libraries (Plex / Jellyfin-Emby folder name, or Kodi video source label). Comma separated, trimmed. Blank = include all.</small>
               </div>    
 
               <div class="form-group">
@@ -750,10 +760,10 @@
                 </div>
 
                 <div class="form-group">
-                  <label for="plexLibraries">Plex Libraries for On-Demand Titles</label>
+                  <label for="plexLibraries">Libraries for On-Demand Titles</label>
                   <input type="text" class="form-control" id="plexLibraries" name="plexLibraries" aria-describedby="plexLibraries"
                     placeholder="suggestions -> movies,tv shows,anime" value="<% if(typeof formData !== 'undefined' && errors){%><%=formData.plexLibraries%>"<%}else{%><%=settings.onDemandLibraries%>"<%}%>>
-                  <small id="plexLibrariesHelp" class="form-text text-muted">Enter Plex library names to use (comma seperated and no spaces, except in the name)
+                  <small id="plexLibrariesHelp" class="form-text text-muted">Names: Plex libraries, Jellyfin/Emby media folders, or <strong>Kodi video source labels</strong> (comma separated; spaces only inside a name)
                     (Leave blank to disable)</small>
                 </div>
                 <div class="form-group">
@@ -761,14 +771,13 @@
                   <input type="text" class="form-control" id="recentlyAddedDays" name="recentlyAddedDays" aria-describedby="recentlyAddedDaysHelp"
                     placeholder="suggest no more than 45." value="<% if(typeof formData !== 'undefined' && errors){%><%=formData.recentlyAddedDays%>"<%}else{%><%=settings.recentlyAddedDays%>"<%}%>>
                   <small id="recentlyAddedDaysHelp" class="form-text text-muted">Show recently added titles from
-                    each specified Plex library. <b>'Content rating'</b> and <b>'Genre' <u>are ignored</u> if this is set to a non-zero value.</b></small>
+                    each library / media folder / <strong>Kodi video source</strong>. <b>'Content rating'</b> and <b>'Genre' <u>are ignored</u> if this is set to a non-zero value.</b></small>
                 </div>
                 <div class="form-group">
                   <label for="numberOnDemand">Number to Display</label>
                   <input type="text" class="form-control" id="numberOnDemand" name="numberOnDemand" aria-describedby="numberOnDemandHelp"
                     placeholder="suggest 5 or 6. (lower numbers perform better)" value="<% if(typeof formData !== 'undefined' && errors){%><%=formData.numberOnDemand%>"<%}else{%><%=settings.numberOnDemand%>"<%}%>>
-                  <small id="numberOnDemandHelp" class="form-text text-muted">The number of random titles to display from
-                    each specified Plex library.</small>
+                  <small id="numberOnDemandHelp" class="form-text text-muted">Random titles per library, media folder, or <strong>Kodi source</strong> (see list above).</small>
                 </div>
 
                 <div class="form-group">
@@ -781,13 +790,13 @@
                   <label for="genres">Genres</label>
                   <input type="text" class="form-control" id="genres" name="genres" aria-describedby="genres"
                     placeholder="genre1,genre2" value="<% if(typeof formData !== 'undefined' && errors){%><%=formData.genres%>"<%}else{%><%=settings.genres%>"<%}%>>
-                  <small id="genres" class="form-text text-muted">Filter on-demand/recently added to only show selected genres (not cumulative). Ignored if recently added is non-zero</small>
+                  <small id="genres" class="form-text text-muted">Filter on-demand/recently added (Plex, Jellyfin, Emby, Kodi) to only show selected genres (not cumulative). Ignored if recently added is non-zero.</small>
                 </div>
                 <div class="form-group">
                   <label for="contentRatings">Hide Ratings</label>
                   <input type="text" class="form-control" id="contentRatings" name="contentRatings" aria-describedby="contentRatings"
                     placeholder="r,nc-17,pg-13" value="<% if(typeof formData !== 'undefined' && errors){%><%=formData.contentRatings%>"<%}else{%><%=settings.contentRatings%>"<%}%>>
-                  <small id="contentRatings" class="form-text text-muted">Do not show titles with these ratings. (based on agent metadata country in plex) Ignored if recently added is non-zero</small>
+                  <small id="contentRatings" class="form-text text-muted">Do not show titles with these official ratings (metadata from your server). Ignored if recently added is non-zero.</small>
                 </div>
 
                 <h6>Hide Banners</h6>

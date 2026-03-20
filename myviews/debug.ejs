@@ -35,13 +35,14 @@
 <p>Posterr Verson: <%=version%></p>
 </br>
 <h3>Tests</h3>
+<p class="text-muted">Open server logs for output. Media server tests match your <strong>Server type</strong> (Plex, Jellyfin, Emby, or Kodi). On-demand test lists libraries/sources, then up to 5 titles from the first — same idea as the legacy Plex check.</p>
 See logs for results
 <br/><br/>
 <button type="button" class="test btn btn-success" onclick="location.href = '<%=baseUrl%>/';">Return</button>
 <button type="button" class="test btn btn-secondary" onclick="location.href = '<%=baseUrl%>/debug/ping';">Ping Tests</button>
-<button type="button" class="test btn btn-secondary" onclick="location.href = '<%=baseUrl%>/debug/plexns';">Now Screening Test</button>
+<button type="button" class="test btn btn-secondary" onclick="location.href = '<%=baseUrl%>/debug/medians';">Media server — Now screening</button>
 <br><br>
-<button type="button" class="test btn btn-secondary" onclick="location.href = '<%=baseUrl%>/debug/plexod';">On-demand Test</button>
+<button type="button" class="test btn btn-secondary" onclick="location.href = '<%=baseUrl%>/debug/mediaod';">Media server — On-demand</button>
 <button type="button" class="test btn btn-secondary" onclick="location.href = '<%=baseUrl%>/debug/sonarr';">Sonarr Test</button>
 <button type="button" class="test btn btn-secondary" onclick="location.href = '<%=baseUrl%>/debug/radarr';">Radarr Test</button>
 <br><br>
@@ -50,6 +51,7 @@ See logs for results
 </br>
 </br>
 <h3>Settings</h3>
+<p class="text-muted">Media server type: <strong><%= settings && settings.mediaServerType ? settings.mediaServerType : 'plex' %></strong> (Plex / Jellyfin / Emby / Kodi)</p>
 <ul>
   <ul>
     <% 

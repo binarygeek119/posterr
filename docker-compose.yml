@@ -1,4 +1,7 @@
-version: '2.4'
+# Posterr — requires Docker Engine 20.10+ for host.docker.internal (Linux).
+# Jellyfin / Emby / Kodi / Plex are reached over HTTP from Posterr settings (no extra container packages).
+
+version: "3.8"
 
 services:
   posterr:
@@ -17,4 +20,7 @@ services:
       - ~/docker/posterr/config:/usr/src/app/config
     ports:
       - 9876:3000
-
+    restart: unless-stopped
+    # Reach Jellyfin/Emby/Kodi/Plex on the Docker host (Linux). Docker Desktop: often works without this.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
