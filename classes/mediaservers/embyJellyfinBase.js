@@ -353,16 +353,9 @@ class EmbyJellyfinBase {
         const type = String(rawType || "");
         if (!item || !type) continue;
 
-        const allowedTypes = new Set([
-          "episode",
-          "movie",
-          "audio",
-          "book",
-          "audiobook",
-        ]);
-        if (!allowedTypes.has(type.toLowerCase())) continue;
-        // Do not skip sessions just because image tags are missing.
-        // Poster URL fallback/placeholder handling happens later.
+        const typeLc = type.toLowerCase();
+        // Do not skip sessions just because image tags/types are unexpected.
+        // Unknown types fall back to a generic now-playing card branch.
 
       const medCard = new mediaCard();
       let transcode = "direct";
@@ -408,7 +401,7 @@ class EmbyJellyfinBase {
       medCard.cast = util.formatCastFromEmbyPeople(item.People);
       medCard.directors = util.formatDirectorsFromEmbyPeople(item.People);
 
-      if (type.toLowerCase() === "audio") {
+      if (typeLc === "audio") {
         const albumName = ((item.Album || item.album || "") + "").trim();
         medCard.title = albumName || item.Name || "";
         medCard.tagLine = [item.AlbumArtist || item.albumArtist, item.Name]
@@ -467,10 +460,7 @@ class EmbyJellyfinBase {
             }
           }
         }
-      } else if (
-        type.toLowerCase() === "book" ||
-        type.toLowerCase() === "audiobook"
-      ) {
+      } else if (typeLc === "book" || typeLc === "audiobook") {
         medCard.title = item.Name || "";
         const byline = [item.AlbumArtist, item.SeriesName]
           .filter(Boolean)
@@ -479,8 +469,7 @@ class EmbyJellyfinBase {
           byline ||
           (Array.isArray(item.Genres) && item.Genres[0]) ||
           medCard.title;
-        medCard.mediaType =
-          type.toLowerCase() === "audiobook" ? "audiobook" : "ebook";
+        medCard.mediaType = typeLc === "audiobook" ? "audiobook" : "ebook";
         medCard.authors = util.formatAuthorsFromEmbyBookItem(item);
         medCard.cardType = cType.CardTypeEnum.NowScreening;
         medCard.DBID = String(mediaId);
@@ -518,7 +507,7 @@ class EmbyJellyfinBase {
         }
         const ms0 = item.MediaSources && item.MediaSources[0];
         if (ms0 && ms0.TranscodingUrl) transcode = "transcode";
-      } else if (type.toLowerCase() === "episode") {
+      } else if (typeLc === "episode") {
         medCard.episodeName = item.Name || "";
         medCard.title = item.SeriesName || "";
         const s = item.ParentIndexNumber != null ? item.ParentIndexNumber : "?";
@@ -571,7 +560,7 @@ class EmbyJellyfinBase {
 
         const ms0 = item.MediaSources && item.MediaSources[0];
         if (ms0 && ms0.TranscodingUrl) transcode = "transcode";
-      } else if (type.toLowerCase() === "movie") {
+      } else if (typeLc === "movie") {
         medCard.title = item.Name || "";
         medCard.tagLine = await util.emptyIfNull(item.Taglines && item.Taglines[0]);
         medCard.mediaType = "movie";
@@ -612,13 +601,46 @@ class EmbyJellyfinBase {
 
         const ms0 = item.MediaSources && item.MediaSources[0];
         if (ms0 && ms0.TranscodingUrl) transcode = "transcode";
+      } else {
+        // Generic fallback for Jellyfin item types we don't model explicitly.
+        medCard.title = item.Name || item.name || "Now Playing";
+        medCard.tagLine =
+          item.SeriesName ||
+          item.Album ||
+          item.AlbumArtist ||
+          item.Type ||
+          medCard.title;
+        medCard.mediaType = "movie";
+        medCard.DBID = String(mediaId);
+        const anyPoster = await this.cachePrimaryImageAny(
+          [
+            {
+              id: item.Id,
+              tag:
+                (item.ImageTags && item.ImageTags.Primary) ||
+                (item.imageTags && item.imageTags.primary) ||
+                item.PrimaryImageTag ||
+                item.primaryImageTag,
+            },
+            { id: item.SeriesId || item.seriesId, tag: null },
+            { id: item.Id, tag: null },
+          ],
+          `${String(item.Id || mediaId || "x").replace(/[^a-zA-Z0-9._-]/g, "_")}.jpg`
+        );
+        medCard.posterURL = anyPoster || "/images/no-poster-available.png";
+        medCard.posterAR = 1.47;
+        medCard.cardType = cType.CardTypeEnum.NowScreening;
       }
 
       const portraitKey = String(item.Id || safeId || mediaId || "x").replace(
         /[^a-zA-Z0-9._-]/g,
         "_"
       );
-      await this.cacheItemPersonPortraits(medCard, item, portraitKey);
+      try {
+        await this.cacheItemPersonPortraits(medCard, item, portraitKey);
+      } catch (e) {
+        /* portraits are optional; keep base card */
+      }
       fallbackCards.push(medCard);
 
       medCard.studio =
@@ -679,6 +701,39 @@ class EmbyJellyfinBase {
             " *Now Scrn. - Skip broken Jellyfin session: " +
             sessionErr
         );
+        // Last-resort: keep at least a minimal card so UI does not go empty.
+        try {
+          const item = session.NowPlayingItem || session.nowPlayingItem;
+          if (item) {
+            const fallback = new mediaCard();
+            fallback.title = item.Name || item.name || "Now Playing";
+            fallback.tagLine =
+              item.SeriesName ||
+              item.Album ||
+              item.AlbumArtist ||
+              item.ProductionYear ||
+              "";
+            fallback.mediaType = (item.Type || item.type || "").toLowerCase();
+            if (fallback.mediaType === "book") fallback.mediaType = "ebook";
+            if (fallback.mediaType === "audiobook")
+              fallback.mediaType = "audiobook";
+            fallback.cardType = cType.CardTypeEnum.NowScreening;
+            fallback.posterURL =
+              fallback.mediaType === "ebook" ||
+              fallback.mediaType === "audiobook"
+                ? "/images/no-cover-available.png"
+                : "/images/no-poster-available.png";
+            fallback.posterAR =
+              fallback.mediaType === "track" ||
+              fallback.mediaType === "album" ||
+              fallback.mediaType === "audiobook"
+                ? 1
+                : 1.47;
+            fallbackCards.push(fallback);
+          }
+        } catch (e2) {
+          /* ignore */
+        }
       }
     }
 

@@ -99,7 +99,11 @@ class MediaCard {
     displayPosterAuthor,
     displayPosterArtist
   ) {
-    const isEnabled = (v) => v === true || String(v).toLowerCase() === "true";
+    const isEnabled = (v) => {
+      if (v === true) return true;
+      const s = String(v == null ? "" : v).toLowerCase().trim();
+      return s === "true" || s === "on" || s === "1" || s === "yes";
+    };
     let hiddenTitle = "";
     let hiddenFooter = "";
     let hidden = "";

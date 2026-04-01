@@ -208,7 +208,7 @@
                 <div class="form-group">
                   <div class="custom-control custom-control-nolabel custom-switch ml-auto">
                     <input type="checkbox" class="custom-control-input" name="displayPosterVideo" id="displayPosterVideo"
-                      value="true" <% if(typeof formData !== 'undefined' && errors){%><%=formData.displayPosterVideo ? 'checked' : '' %><%}else{%><%=((settings.displayPosterVideo == 'true') || (settings.displayPosterVideo === true)) ? 'checked' : '' %><%}%>>
+                      value="true" <% if(typeof formData !== 'undefined' && errors){%><%=formData.displayPosterVideo ? 'checked' : '' %><%}else{%><%=((settings.displayPosterVideo == 'true') || (settings.displayPosterVideo === true) || (settings.displayPosterVideo == 'on') || (settings.displayPosterVideo == 1) || (settings.displayPosterVideo == '1')) ? 'checked' : '' %><%}%>>
                     <label class="custom-control-label" for="displayPosterVideo">Display movie and TV posters</label>
                     <small class="form-text text-muted">Shows posters for movies and TV (shows/episodes). When off, video cards use a placeholder image.</small>
                   </div>

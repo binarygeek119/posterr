@@ -154,6 +154,24 @@ if (!fs.existsSync(dir)) {
   fs.mkdirSync(dir);
 }
 
+var dir = './saved/imagecache';
+
+if (!fs.existsSync(dir)) {
+  fs.mkdirSync(dir);
+}
+
+var dir = './saved/mp3cache';
+
+if (!fs.existsSync(dir)) {
+  fs.mkdirSync(dir);
+}
+
+var dir = './saved/randomthemes';
+
+if (!fs.existsSync(dir)) {
+  fs.mkdirSync(dir);
+}
+
 var dir = './public';
 
 if (!fs.existsSync(dir)) {
@@ -715,7 +733,15 @@ async function loadNowScreening() {
   // TODO - move this into its own function!
   let mCards = [];
   // is now screening false, then clear array
-  if (!isNowShowingEnabled) { nsCards.length = 0 };
+  // If sessions were detected, keep them even when the enable flag is in an
+  // unexpected format (e.g. boolean/on/1) to avoid blank screens.
+  if (!isNowShowingEnabled && nsCards.length > 0) {
+    let now = new Date();
+    console.log(
+      now.toLocaleString() +
+        " *Now Scrn. - Detected active sessions while Now Showing appears disabled; keeping cards for display"
+    );
+  }
 
   if (nsCards.length > 0) {
     // check for theater mode and enable
