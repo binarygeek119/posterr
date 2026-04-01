@@ -90,7 +90,7 @@ version: "3.8"
 
 services:
   posterr:
-    image: petersem/posterr
+    image: binarygeek119/postarr:latest
     container_name: posterr
     environment:
       TZ: Australia/Brisbane
