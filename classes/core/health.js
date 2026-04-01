@@ -4,9 +4,9 @@ const DEFAULT_SETTINGS = require("../../consts");
 const util = require("../core/utility");
 const ping = require("ping");
 const pms = require("../mediaservers/plex");
-const JellyfinEmby = require("../mediaservers/jellyfinEmby");
 const Kodi = require("../mediaservers/kodi");
 const {
+  getMediaServerClass,
   isJellyfinFamily,
   isKodi,
   getMediaServerShortLabel,
@@ -27,7 +27,8 @@ class Health {
 
   async PlexNSCheck() {
     if (isJellyfinFamily(this.settings.mediaServerType)) {
-      const ms = new JellyfinEmby({
+      const Pms = getMediaServerClass(this.settings.mediaServerType);
+      const ms = new Pms({
         plexHTTPS: this.settings.plexHTTPS,
         plexIP: this.settings.plexIP,
         plexPort: this.settings.plexPort,
@@ -36,7 +37,7 @@ class Health {
       try {
         const sessions = await ms.GetNowScreeningRawData();
         const playing = Array.isArray(sessions)
-          ? sessions.filter((s) => s.NowPlayingItem).length
+          ? sessions.filter((s) => s.NowPlayingItem || s.nowPlayingItem).length
           : 0;
         if (playing === 0) {
           console.log(
@@ -101,7 +102,8 @@ class Health {
 
   async PlexODCheck() {
     if (isJellyfinFamily(this.settings.mediaServerType)) {
-      const ms = new JellyfinEmby({
+      const Pms = getMediaServerClass(this.settings.mediaServerType);
+      const ms = new Pms({
         plexHTTPS: this.settings.plexHTTPS,
         plexIP: this.settings.plexIP,
         plexPort: this.settings.plexPort,
@@ -303,18 +305,20 @@ async TriviaCheck() {
 
 async ReadarrCheck() {
   let resp;
+  const bookLabel =
+    this.settings.bookArrKind === "chaptarr" ? "Chaptarr" : "Readarr";
   // set up date range and date formats
   let today = new Date();
   let later = new Date();
   later.setDate(later.getDate() + 30);
   let startDate = today.toISOString().split("T")[0];
   let endDate = later.toISOString().split("T")[0];
-  // call readarr API and return results
+  // Readarr / Chaptarr share the same calendar API
   try {
     resp = await axios
       .get(
         this.settings.readarrURL +
-          "/api/v1/calendar?apikey=" +
+          "/api/v1/calendar?unmonitored=false&apikey=" +
           this.settings.readarrToken +
           "&start=" +
           startDate +
@@ -328,7 +332,7 @@ async ReadarrCheck() {
     // displpay error if call failed
     let d = new Date();
     console.log(
-      d.toLocaleString() + " *READARR CHECK- Get calendar data:",
+      d.toLocaleString() + " *" + bookLabel.toUpperCase() + " CHECK- Get calendar data:",
       err.message
     );
     throw err;
@@ -380,6 +384,47 @@ async RadarrCheck() {
   });
   return;
 }
+
+async LidarrCheck() {
+  let resp;
+  const today = new Date();
+  const later = new Date();
+  later.setDate(later.getDate() + 30);
+  const startDate = today.toISOString().split("T")[0];
+  const endDate = later.toISOString().split("T")[0];
+  try {
+    resp = await axios
+      .get(
+        this.settings.lidarrURL +
+          "/api/v1/calendar?unmonitored=false&apikey=" +
+          this.settings.lidarrToken +
+          "&start=" +
+          startDate +
+          "&end=" +
+          endDate
+      )
+      .catch((err) => {
+        throw err;
+      });
+  } catch (err) {
+    const d = new Date();
+    console.log(
+      d.toLocaleString() + " *LIDARR CHECK - Get calendar data:",
+      err.message
+    );
+    throw err;
+  }
+
+  (resp.data || []).forEach((album) => {
+    console.log(
+      (album.artist && album.artist.artistName) || "",
+      "-",
+      album.title
+    );
+  });
+  return;
+}
+
   /**
    * @desc Checks all services available
    * @returns nothing
@@ -393,8 +438,13 @@ async RadarrCheck() {
       this.PingSingleIP("Radarr", this.settings.radarrURL);
     if (this.settings.sonarrURL !== undefined)
       this.PingSingleIP("Sonarr", this.settings.sonarrURL);
+    if (this.settings.lidarrURL !== undefined)
+      this.PingSingleIP("Lidarr", this.settings.lidarrURL);
     if (this.settings.readarrURL !== undefined)
-      this.PingSingleIP("Readarr", this.settings.readarrURL);
+      this.PingSingleIP(
+        this.settings.bookArrKind === "chaptarr" ? "Chaptarr" : "Readarr",
+        this.settings.readarrURL
+      );
     this.PingSingleIP("TVDB", "artworks.thetvdb.com");
     if (usesPlexThemeHost(this.settings.mediaServerType)) {
       this.PingSingleIP("Plex Themes", "tvthemes.plexapp.com");

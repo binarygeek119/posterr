@@ -23,10 +23,35 @@ const DEFAULT_SETTINGS = {
   radarrURL : "",
   radarrToken : "",
   radarrCalDays : 30,
+  lidarrURL : "",
+  lidarrToken : "",
+  lidarrCalDays : 30,
   readarrURL : "",
   readarrToken : "",
   readarrCalDays : 60,
+  /** "readarr" | "chaptarr" — same API; used for UI and log labels */
+  bookArrKind : "readarr",
   hasArt : "false",
+  /** When true, show principal cast (actors) on media cards when metadata includes it */
+  showCast: "false",
+  showDirectors: "false",
+  showAuthors: "false",
+  /** Album / track artist line when metadata provides it (music) */
+  showAlbumArtist: "false",
+  /** Show main cover poster for music (album / track) cards */
+  displayPosterAlbum: "true",
+  /** Show main poster for movie and TV cards (movie / episode / show) */
+  displayPosterVideo: "true",
+  /** Show main cover poster for ebooks and audiobooks cards */
+  displayPosterBooks: "true",
+  /** Small portrait image from first cast member with art (Plex / Jellyfin / Emby) */
+  displayPosterActor: "false",
+  /** Second cast portrait on Plex; Jellyfin/Emby prefers a female actor when Gender is set */
+  displayPosterActress: "false",
+  displayPosterDirector: "false",
+  displayPosterAuthor: "false",
+  /** Album / track artist portrait when the server provides separate art */
+  displayPosterArtist: "false",
   shuffleSlides: "false",
   genres: "",
   custBrand: "",
@@ -37,6 +62,7 @@ const DEFAULT_SETTINGS = {
   enableOD: "true",
   enableSonarr: "true",
   enableRadarr: "true",
+  enableLidarr: "true",
   enableReadarr: "true",
   filterRemote: "true",
   filterLocal: "true",

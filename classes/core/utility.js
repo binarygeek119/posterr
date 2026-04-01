@@ -23,6 +23,73 @@ class utility {
     });
   }
 
+  /** Escape text for safe insertion into HTML attribute or body context */
+  static escapeHtml(str) {
+    if (str == null || str === "") return "";
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  /** Plex Genre/Role/Director-style entries: { tag } or { Tag } */
+  static _plexTagNames(tagged, max) {
+    if (tagged == null) return "";
+    const arr = Array.isArray(tagged) ? tagged : [tagged];
+    const names = arr
+      .map((r) => (r && (r.tag != null ? r.tag : r.Tag)) || "")
+      .filter(Boolean);
+    return names.slice(0, max).join(", ");
+  }
+
+  /** Comma-separated actor names from Plex Role metadata */
+  static formatCastFromPlexRole(role) {
+    return utility._plexTagNames(role, 12);
+  }
+
+  /** Comma-separated director names from Plex Director metadata */
+  static formatDirectorsFromPlexDirector(director) {
+    return utility._plexTagNames(director, 8);
+  }
+
+  static _embyPeopleByType(people, typeName, max) {
+    if (!people || !Array.isArray(people)) return "";
+    const names = people
+      .filter((p) => (p.Type || p.type || "").toString() === typeName)
+      .map((p) => p.Name || p.name)
+      .filter(Boolean);
+    return names.slice(0, max).join(", ");
+  }
+
+  /** Comma-separated actor names from Jellyfin/Emby People array */
+  static formatCastFromEmbyPeople(people) {
+    return utility._embyPeopleByType(people, "Actor", 12);
+  }
+
+  /** Comma-separated director names from Jellyfin/Emby People array */
+  static formatDirectorsFromEmbyPeople(people) {
+    return utility._embyPeopleByType(people, "Director", 8);
+  }
+
+  static _embyPeopleByTypes(people, typeNames, max) {
+    if (!people || !Array.isArray(people) || !typeNames.length) return "";
+    const set = new Set(typeNames);
+    const names = people
+      .filter((p) => set.has((p.Type || p.type || "").toString()))
+      .map((p) => p.Name || p.name)
+      .filter(Boolean);
+    return names.slice(0, max).join(", ");
+  }
+
+  /** Jellyfin/Emby book & audiobook: AlbumArtist plus Writer/Author from People */
+  static formatAuthorsFromEmbyBookItem(item) {
+    if (!item) return "";
+    const album = (item.AlbumArtist || item.albumArtist || "").trim();
+    const fromPeople = utility._embyPeopleByTypes(item.People, ["Writer", "Author"], 8);
+    if (album && fromPeople) return album + ", " + fromPeople;
+    return album || fromPeople;
+  }
 
   /**
    * @desc Returns an empty string if undefined, null or empty, else the submitted value

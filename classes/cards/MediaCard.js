@@ -51,13 +51,55 @@ class MediaCard {
     this.runProgress = "";
     this.linkUrl = "";
     this.youtubeKey = "";
+    /** Comma-separated principal cast; shown when settings.showCast is true */
+    this.cast = "";
+    /** Comma-separated directors; shown when settings.showDirectors is true */
+    this.directors = "";
+    /** Comma-separated authors; shown when settings.showAuthors is true */
+    this.authors = "";
+    /** Album artist / performer for music; shown when settings.showAlbumArtist is true */
+    this.albumArtist = "";
+    /** Optional portrait URLs for display-poster settings (cached under /imagecache/) */
+    this.portraitActorURL = "";
+    this.portraitActressURL = "";
+    this.portraitDirectorURL = "";
+    this.portraitAuthorURL = "";
+    this.portraitArtistURL = "";
+    this.featuredActorName = "";
+    this.featuredActressName = "";
+    this.featuredDirectorName = "";
+    this.featuredAuthorName = "";
+    this.featuredArtistName = "";
+    this.featuredActorCredits = [];
+    this.featuredActressCredits = [];
+    this.featuredDirectorCredits = [];
+    this.featuredAuthorCredits = [];
+    this.featuredArtistCredits = [];
   }
 
   /**
    * @desc renders the properties of the card into html, then sets this to the 'rendered' property
    * @returns nothing
    */
-  async Render(hasArt,baseUrl,hideTitle,hideFooter) {
+  async Render(
+    hasArt,
+    baseUrl,
+    hideTitle,
+    hideFooter,
+    showCast,
+    showDirectors,
+    showAuthors,
+    showAlbumArtist,
+    displayPosterAlbum,
+    displayPosterVideo,
+    displayPosterBooks,
+    displayPosterActor,
+    displayPosterActress,
+    displayPosterDirector,
+    displayPosterAuthor,
+    displayPosterArtist
+  ) {
+    const isEnabled = (v) => v === true || String(v).toLowerCase() === "true";
     let hiddenTitle = "";
     let hiddenFooter = "";
     let hidden = "";
@@ -65,8 +107,17 @@ class MediaCard {
     let pauseMessage = "";
 
     // set header/footer hidden values
-    if(hideTitle=='true' && this.cardType[0] == "On-demand") hiddenTitle = "hidden";
-    if(hideFooter=='true' && this.cardType[0] == "On-demand") hiddenFooter = "hidden";
+    // Keep music/book metadata visible in footer for on-demand cards.
+    const isMusicCard = this.mediaType === "album" || this.mediaType === "track";
+    const isBookCard =
+      this.mediaType === "ebook" || this.mediaType === "audiobook";
+    const keepMetaFooter = isMusicCard || isBookCard;
+    if (hideTitle == "true" && this.cardType[0] == "On-demand" && !keepMetaFooter) {
+      hiddenTitle = "hidden";
+    }
+    if (hideFooter == "true" && this.cardType[0] == "On-demand" && !keepMetaFooter) {
+      hiddenFooter = "hidden";
+    }
     if(hiddenTitle !== "" && hiddenFooter !== "") fullScreen="fullscreen";
     if(this.cardType[0] == "Picture" || this.cardType == "Trivia Question" || this.cardType == "WebURL"){
       hiddenTitle="hidden";
@@ -154,6 +205,10 @@ class MediaCard {
     let yearPill = "";
     let pagePill = "";
     let endTimePill = "";
+    let castPill = "";
+    let directorPill = "";
+    let authorPill = "";
+    let albumArtistPill = "";
 
     // toggle background art as per settings
     if(hasArt=="true") {
@@ -162,6 +217,151 @@ class MediaCard {
     else{
       this.posterArtURL = "";
     }
+
+    let mainPosterURL = this.posterURL;
+    if (
+      !isEnabled(displayPosterAlbum) &&
+      (this.mediaType === "album" || this.mediaType === "track")
+    ) {
+      mainPosterURL = "/images/no-poster-available.png";
+    }
+    if (
+      !isEnabled(displayPosterVideo) &&
+      (this.mediaType === "movie" ||
+        this.mediaType === "episode" ||
+        this.mediaType === "show")
+    ) {
+      mainPosterURL = "/images/no-poster-available.png";
+    }
+    if (
+      !isEnabled(displayPosterBooks) &&
+      (this.mediaType === "ebook" || this.mediaType === "audiobook")
+    ) {
+      mainPosterURL = "/images/no-cover-available.png";
+    }
+    if (!mainPosterURL || String(mainPosterURL).trim() === "") {
+      if (this.mediaType === "ebook" || this.mediaType === "audiobook") {
+        mainPosterURL = "/images/no-cover-available.png";
+      } else {
+        mainPosterURL = "/images/no-poster-available.png";
+      }
+    }
+    const posterFallbackURL =
+      this.mediaType === "ebook" || this.mediaType === "audiobook"
+        ? "/images/no-cover-available.png"
+        : "/images/no-poster-available.png";
+
+    let displayedTagLine = this.tagLine;
+    const castPosterEnabled =
+      isEnabled(displayPosterActor) || isEnabled(displayPosterActress);
+    const directorPosterEnabled = isEnabled(displayPosterDirector);
+    const authorPosterEnabled = isEnabled(displayPosterAuthor);
+    const artistPosterEnabled = isEnabled(displayPosterArtist);
+    const isVideoCard =
+      this.mediaType === "movie" ||
+      this.mediaType === "episode" ||
+      this.mediaType === "show";
+    const allowFeaturedPeoplePoster =
+      !isVideoCard || !isEnabled(displayPosterVideo);
+    if (
+      allowFeaturedPeoplePoster &&
+      (castPosterEnabled ||
+        directorPosterEnabled ||
+        authorPosterEnabled ||
+        artistPosterEnabled)
+    ) {
+      const canUseActress =
+        this.portraitActressURL && String(this.portraitActressURL).trim() !== "";
+      const canUseActor =
+        this.portraitActorURL && String(this.portraitActorURL).trim() !== "";
+      const canUseDirector =
+        this.portraitDirectorURL &&
+        String(this.portraitDirectorURL).trim() !== "";
+      const canUseAuthor =
+        this.portraitAuthorURL && String(this.portraitAuthorURL).trim() !== "";
+      const canUseArtist =
+        this.portraitArtistURL && String(this.portraitArtistURL).trim() !== "";
+      let personName = "";
+      let personCredits = [];
+      let personPoster = "";
+
+      if (artistPosterEnabled && canUseArtist) {
+        personName = this.featuredArtistName || "";
+        personCredits = Array.isArray(this.featuredArtistCredits)
+          ? this.featuredArtistCredits
+          : [];
+        personPoster = this.portraitArtistURL;
+      } else if (authorPosterEnabled && canUseAuthor) {
+        personName = this.featuredAuthorName || "";
+        personCredits = Array.isArray(this.featuredAuthorCredits)
+          ? this.featuredAuthorCredits
+          : [];
+        personPoster = this.portraitAuthorURL;
+      } else if (directorPosterEnabled && canUseDirector) {
+        personName = this.featuredDirectorName || "";
+        personCredits = Array.isArray(this.featuredDirectorCredits)
+          ? this.featuredDirectorCredits
+          : [];
+        personPoster = this.portraitDirectorURL;
+      } else if (isEnabled(displayPosterActress) && canUseActress) {
+        personName = this.featuredActressName || "";
+        personCredits = Array.isArray(this.featuredActressCredits)
+          ? this.featuredActressCredits
+          : [];
+        personPoster = this.portraitActressURL;
+      } else if (isEnabled(displayPosterActor) && canUseActor) {
+        personName = this.featuredActorName || "";
+        personCredits = Array.isArray(this.featuredActorCredits)
+          ? this.featuredActorCredits
+          : [];
+        personPoster = this.portraitActorURL;
+      } else if (canUseActor) {
+        personName = this.featuredActorName || "";
+        personCredits = Array.isArray(this.featuredActorCredits)
+          ? this.featuredActorCredits
+          : [];
+        personPoster = this.portraitActorURL;
+      } else if (canUseActress) {
+        personName = this.featuredActressName || "";
+        personCredits = Array.isArray(this.featuredActressCredits)
+          ? this.featuredActressCredits
+          : [];
+        personPoster = this.portraitActressURL;
+      }
+
+      if (personPoster) {
+        mainPosterURL = personPoster;
+        if (personName) cardCustomTitle = util.escapeHtml(personName);
+        if (personCredits.length > 0) {
+          displayedTagLine = personCredits.slice(0, 5).join("  •  ");
+        } else if (this.title) {
+          displayedTagLine = String(this.title);
+        }
+      }
+    }
+
+    const portraitStrip = (() => {
+      const parts = [];
+      const add = (on, url, cls) => {
+        if (isEnabled(on) && url && String(url).trim() !== "") {
+          parts.push(
+            `<div class="cardPortrait ` +
+              cls +
+              `" style="background-image:url('` +
+              baseUrl +
+              util.escapeHtml(url) +
+              `')"></div>`
+          );
+        }
+      };
+      add(displayPosterActor, this.portraitActorURL, "cardPortraitActor");
+      add(displayPosterActress, this.portraitActressURL, "cardPortraitActress");
+      add(displayPosterDirector, this.portraitDirectorURL, "cardPortraitDirector");
+      add(displayPosterAuthor, this.portraitAuthorURL, "cardPortraitAuthor");
+      add(displayPosterArtist, this.portraitArtistURL, "cardPortraitArtist");
+      if (parts.length === 0) return "";
+      return `<div class="cardPortraitStrip">` + parts.join("") + `</div>`;
+    })();
 
     // include if value present
     if (!(await util.isEmpty(this.year))) {
@@ -257,6 +457,37 @@ class MediaCard {
         "<span class='badge badge-pill badge-dark'>End: " + endTime + "</span>";
     }
 
+    if (showCast === "true" && !(await util.isEmpty(this.cast))) {
+      castPill =
+        "<span class='badge badge-pill badge-secondary'>Cast: " +
+        util.escapeHtml(this.cast) +
+        "</span>";
+    }
+
+    if (showDirectors === "true" && !(await util.isEmpty(this.directors))) {
+      directorPill =
+        "<span class='badge badge-pill badge-secondary'>Director: " +
+        util.escapeHtml(this.directors) +
+        "</span>";
+    }
+
+    if (showAuthors === "true" && !(await util.isEmpty(this.authors))) {
+      authorPill =
+        "<span class='badge badge-pill badge-secondary'>Authors: " +
+        util.escapeHtml(this.authors) +
+        "</span>";
+    }
+
+    if (
+      showAlbumArtist === "true" &&
+      !(await util.isEmpty(this.albumArtist))
+    ) {
+      albumArtistPill =
+        "<span class='badge badge-pill badge-secondary'>Artist: " +
+        util.escapeHtml(this.albumArtist) +
+        "</span>";
+    }
+
     // render data into html
     this.rendered =
       `
@@ -293,7 +524,9 @@ class MediaCard {
       " " + fullScreen +
       `" style="background-image: url('` +
       baseUrl + 
-      this.posterURL + `')">` + pauseMessage + `
+      mainPosterURL + `'), url('` +
+      baseUrl +
+      posterFallbackURL + `')">` + portraitStrip + pauseMessage + `
 
       <div class="progress ` +
       hidden +
@@ -320,7 +553,7 @@ class MediaCard {
       this.ID +
       `">
         <marquee direction="left" autostart="false" id="marquee`+ this.ID + `"><div class="tagLine" id="tagLine`+ this.ID + `">` +
-      this.tagLine +
+      displayedTagLine +
       `</div></marquee>
         <div class="tagDetails">` +
       contentRatingPill +
@@ -336,6 +569,10 @@ class MediaCard {
       ipPill +
       yearPill +
       endTimePill +
+      castPill +
+      directorPill +
+      authorPill +
+      albumArtistPill +
       `</div>
       </div>
       </div>

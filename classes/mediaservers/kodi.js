@@ -5,7 +5,7 @@ const cType = require("./../cards/CardType");
 const util = require("./../core/utility");
 const core = require("./../core/cache");
 const { CardTypeEnum } = require("./../cards/CardType");
-const JellyfinEmby = require("./jellyfinEmby");
+const EmbyJellyfinBase = require("./embyJellyfinBase");
 
 /**
  * Kodi JSON-RPC over HTTP (Settings → Services → Control → Allow remote control via HTTP).
@@ -270,7 +270,7 @@ class Kodi {
         contentRating = String(item.mpaa).replace(/^Rated\s+/i, "").trim() || "NR";
       }
       medCard.contentRating = contentRating;
-      medCard.ratingColour = JellyfinEmby.ratingColour(contentRating);
+      medCard.ratingColour = EmbyJellyfinBase.ratingColour(contentRating);
       medCard.genre = await util.emptyIfNull(Kodi.genresToArray(item.genre));
       medCard.summary = item.plot || "";
 
@@ -296,14 +296,30 @@ class Kodi {
       if (type === "song") {
         medCard.title = item.title || item.label || "";
         medCard.tagLine = [item.artist, item.album, item.title].filter(Boolean).join(" — ");
+        const a = item.artist;
+        medCard.albumArtist = Array.isArray(a)
+          ? a.filter(Boolean).join(", ")
+          : a || "";
         medCard.mediaType = "track";
-        medCard.cardType = cType.CardTypeEnum.Playing;
+        medCard.cardType = cType.CardTypeEnum.NowScreening;
         medCard.resCodec = "";
         medCard.audioCodec = "";
         if (posterVfs) {
           const url = this.vfsImageUrl(posterVfs);
           if (url) await core.CacheImage(url, posterFile);
           medCard.posterURL = "/imagecache/" + posterFile;
+        }
+        if (hasArt === "true") {
+          const fan = this.fanartFromItem(item);
+          if (fan) {
+            const artFile = posterFile.replace(/\.jpg$/, "-art.jpg");
+            try {
+              await core.CacheImage(this.vfsImageUrl(fan), artFile);
+              medCard.posterArtURL = "/imagecache/" + artFile;
+            } catch (e) {
+              /* optional */
+            }
+          }
         }
         medCard.posterAR = 1;
       } else if (type === "episode") {
@@ -780,7 +796,7 @@ class Kodi {
         contentRating = String(md.mpaa).replace(/^Rated\s+/i, "").trim() || "NR";
       }
       medCard.contentRating = contentRating;
-      medCard.ratingColour = JellyfinEmby.ratingColour(contentRating);
+      medCard.ratingColour = EmbyJellyfinBase.ratingColour(contentRating);
 
       medCard.year = md.year;
       medCard.genre = await util.emptyIfNull(Kodi.genresToArray(md.genre));

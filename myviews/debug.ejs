@@ -45,8 +45,9 @@ See logs for results
 <button type="button" class="test btn btn-secondary" onclick="location.href = '<%=baseUrl%>/debug/mediaod';">Media server — On-demand</button>
 <button type="button" class="test btn btn-secondary" onclick="location.href = '<%=baseUrl%>/debug/sonarr';">Sonarr Test</button>
 <button type="button" class="test btn btn-secondary" onclick="location.href = '<%=baseUrl%>/debug/radarr';">Radarr Test</button>
+<button type="button" class="test btn btn-secondary" onclick="location.href = '<%=baseUrl%>/debug/lidarr';">Lidarr Test</button>
 <br><br>
-<button type="button" class="test btn btn-secondary" onclick="location.href = '<%=baseUrl%>/debug/readarr';">Readarr Test</button>
+<button type="button" class="test btn btn-secondary" onclick="location.href = '<%=baseUrl%>/debug/readarr';">Books (Readarr / Chaptarr) Test</button>
 <button type="button" class="test btn btn-secondary" onclick="location.href = '<%=baseUrl%>/debug/trivia';">Open Trivia DB Test</button><br/>
 </br>
 </br>
@@ -71,6 +72,9 @@ See logs for results
           keyVal = 'suppressed';
           break;
         case "readarrtoken":
+          keyVal = 'suppressed';
+          break;
+        case "lidarrtoken":
           keyVal = 'suppressed';
           break;
         case "filterusers":
