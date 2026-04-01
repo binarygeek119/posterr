@@ -26,7 +26,8 @@
 ---
 ## Features
  - Displays movies, shows, music poster for what's currently playing.
- - Displays random (on-demand) titles from multiple libraries (Plex, Jellyfin, Emby, or Kodi video sources).
+ - Displays random (on-demand) titles from multiple libraries (Plex, Jellyfin, Emby, or Kodi sources).
+ - On-demand supports movies, TV, music albums, books, and audiobooks (server/library type dependent).
  - Displays custom pictures, background art, and themes
  - Shows coming soon titles from Sonarr (or Season premieres).
  - Shows coming soon titles from Radarr.
@@ -45,6 +46,21 @@
  - Post API (at '/api/sleep') to toggle sleep mode. (Pass in header values `'psw: your Posterr password'` and `'sleep: true|false'`)
  - Get API at the same endpoint will return the sleep status without any parsed parameters.
  - Supports `CEC` control of monitor inconjunction with the Posterr `Sleep Timer`. 
+
+### Display controls (this modified branch)
+ - Per-media poster toggles:
+   - Display movie and TV posters
+   - Display albums
+   - Display books and audiobooks
+ - Optional metadata pills:
+   - Show cast, directors, authors, and album artist
+ - Optional featured portrait modes:
+   - Display actors and actresses
+   - Display director portrait
+   - Show author portrait
+   - Display artist portrait
+ - Featured portrait modes can render a person/artist image as the main poster, show their name in the top banner, and show up to 5 related credits in the bottom line when metadata is available.
+ - Now Screening/Now Playing support includes music and audiobooks (in addition to movies/TV) for supported servers.
 ---
 ## Prerequisites
 ### Mandatory
