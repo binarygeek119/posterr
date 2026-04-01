@@ -4,6 +4,11 @@
 > **About this repository**  
 > This is an **AI-assisted, modified** version of [Posterr](https://github.com/petersem/posterr). The **original developer(s) and the upstream project did the real work**—design, architecture, and years of maintenance. This tree is intentionally a **test / sandbox app** for another developer to practice extending Posterr-style features and to learn how to do that **the right way** (clear changes, tests, and eventual contribution back to the real project if desired). For production use, prefer **[upstream Posterr](https://github.com/petersem/posterr)**.
 
+my modded docker image
+https://hub.docker.com/r/binarygeek119/postarr
+binarygeek119/postarr:latest
+
+
 ![Docker Pulls](https://img.shields.io/docker/pulls/petersem/posterr) 
 ![Docker Image Size (tag)](https://img.shields.io/docker/image-size/petersem/posterr/latest?logo=docker) 
 ![GitHub Stars](https://img.shields.io/github/stars/petersem/posterr?style=flat)
