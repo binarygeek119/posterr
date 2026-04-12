@@ -3,10 +3,21 @@ const mediaCard = require("./../cards/MediaCard");
 const cType = require("./../cards/CardType");
 const util = require("./../core/utility");
 const core = require("./../core/cache");
+const posterSyncLib = require("./../core/posterSyncProgress");
 const { CardTypeEnum } = require("./../cards/CardType");
+const posterrPackage = require("../../package.json");
 
 /**
- * Shared Emby/Jellyfin REST client (X-Emby-Token / api_key).
+ * Paginated GET /Users/{id}/Items (recursive library scan) often exceeds 2 minutes on large
+ * libraries, slow storage, or remote Jellyfin; poster sync uses this per page.
+ */
+const LIBRARY_ITEMS_PAGE_TIMEOUT_MS = 600000;
+
+/**
+ * Shared Emby/Jellyfin REST client.
+ * Emby: X-Emby-Token + api_key query (legacy, still widely used).
+ * Jellyfin 10.11+: legacy auth may be disabled; sending X-Emby-Token together with MediaBrowser auth can 401 (jellyfin#16086).
+ * Jellyfin therefore uses only Authorization: MediaBrowser Token="…".
  * Use {@link ../jellyfin} or {@link ../emby} as the media-server plugin; do not wire this base in the factory.
  * Connection fields reuse Plex-oriented setting names (plexIP, plexPort, plexToken, plexHTTPS).
  */
@@ -60,8 +71,61 @@ class EmbyJellyfinBase {
     return parts.join("&");
   }
 
+  /** Emby keeps legacy header + api_key; Jellyfin uses MediaBrowser Authorization only. */
+  _usesLegacyEmbyTokenQueryAuth() {
+    return this.appName !== "Jellyfin";
+  }
+
+  /** Jellyfin / Emby “MediaBrowser” scheme (API keys and access tokens). */
+  _mediaBrowserAuthorizationHeader(key) {
+    const ver = (posterrPackage && posterrPackage.version) || "1.0";
+    const tok = String(key).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    return `MediaBrowser Client="Posterr", Device="Posterr", DeviceId="posterr", Version="${ver}", Token="${tok}"`;
+  }
+
+  /**
+   * Jellyfin image URLs are fetched with `request()` (not axios). Newer servers expect the same
+   * MediaBrowser Authorization as the JSON API; query-only api_key/ApiKey is often rejected on /Images/.
+   * @returns {object|null} headers object or null for Emby (uses api_key on URL)
+   */
+  jellyfinImageAuthHeaders() {
+    if (this.appName !== "Jellyfin") return null;
+    const key =
+      this.apiKey != null && this.apiKey !== ""
+        ? String(this.apiKey).trim()
+        : "";
+    if (!key) return null;
+    return { Authorization: this._mediaBrowserAuthorizationHeader(key) };
+  }
+
+  async _cacheImageFromServer(url, fileName) {
+    const h = this.jellyfinImageAuthHeaders();
+    return core.CacheImage(url, fileName, h ? { headers: h } : undefined);
+  }
+
   async apiGet(path, options = {}) {
+    const key =
+      this.apiKey != null && this.apiKey !== ""
+        ? String(this.apiKey).trim()
+        : "";
+    if (!key) {
+      throw new Error(
+        `${this.appName}: no API key in settings. Create one in the server dashboard (Jellyfin: Dashboard → API Keys) and paste it into Posterr’s server token field.`
+      );
+    }
     const params = { ...(options.params || {}) };
+    let headers;
+    if (this._usesLegacyEmbyTokenQueryAuth()) {
+      if (params.api_key === undefined) {
+        params.api_key = key;
+      }
+      headers = { "X-Emby-Token": key };
+    } else {
+      delete params.api_key;
+      headers = {
+        Authorization: this._mediaBrowserAuthorizationHeader(key),
+      };
+    }
     const timeoutMs =
       options.timeoutMs != null ? Number(options.timeoutMs) : 60000;
     const maxRetries =
@@ -72,7 +136,7 @@ class EmbyJellyfinBase {
     while (true) {
       try {
         const res = await axios.get(url, {
-          headers: { "X-Emby-Token": this.apiKey },
+          headers,
           timeout: timeoutMs,
         });
         return res.data;
@@ -83,6 +147,14 @@ class EmbyJellyfinBase {
         if (isTimeout && attempt < maxRetries) {
           attempt++;
           continue;
+        }
+        const status = e.response && e.response.status;
+        if (status === 401) {
+          if (this._usesLegacyEmbyTokenQueryAuth()) {
+            e.message += ` | ${this.appName}: HTTP 401 — wrong or revoked API key, or the key lacks access. Regenerate the key in the server dashboard and update Posterr. If you use a reverse proxy, ensure it forwards the X-Emby-Token header (Posterr also sends api_key on the query string).`;
+          } else {
+            e.message += ` | Jellyfin: HTTP 401 — invalid or revoked API key (Dashboard → API Keys), or the server blocked the request. Posterr uses Authorization: MediaBrowser (required on Jellyfin 10.11+ when legacy X-Emby-Token is disabled). Ensure your reverse proxy forwards the Authorization header if you use one.`;
+          }
         }
         const d = e.response && e.response.data;
         if (d != null) {
@@ -157,24 +229,41 @@ class EmbyJellyfinBase {
     }
   }
 
+  /**
+   * Image endpoints are fetched with `request` (no MediaBrowser header). Jellyfin 10.11+ treats `api_key` as legacy;
+   * use `ApiKey` for Jellyfin. Emby keeps `api_key`.
+   */
+  _imageUrlApiQuery() {
+    const key = encodeURIComponent(
+      String(this.apiKey != null ? this.apiKey : "").trim()
+    );
+    if (this.appName === "Jellyfin") {
+      return `ApiKey=${key}`;
+    }
+    return `api_key=${key}`;
+  }
+
   primaryImageUrl(itemId, tag) {
+    if (this.appName === "Jellyfin") {
+      const q = tag ? `?tag=${encodeURIComponent(tag)}` : "";
+      return `${this.baseUrl()}/Items/${itemId}/Images/Primary/0${q}`;
+    }
     const t = tag ? `&tag=${encodeURIComponent(tag)}` : "";
-    return `${this.baseUrl()}/Items/${itemId}/Images/Primary?api_key=${encodeURIComponent(
-      this.apiKey
-    )}${t}`;
+    return `${this.baseUrl()}/Items/${itemId}/Images/Primary?${this._imageUrlApiQuery()}${t}`;
   }
 
   backdropImageUrl(itemId, index = 0) {
-    return `${this.baseUrl()}/Items/${itemId}/Images/Backdrop/${index}?api_key=${encodeURIComponent(
-      this.apiKey
-    )}`;
+    if (this.appName === "Jellyfin") {
+      return `${this.baseUrl()}/Items/${itemId}/Images/Backdrop/${index}`;
+    }
+    return `${this.baseUrl()}/Items/${itemId}/Images/Backdrop/${index}?${this._imageUrlApiQuery()}`;
   }
 
   /**
    * Cache a primary image using multiple Jellyfin id/tag candidates.
    * Returns web path or empty string when all candidates fail.
    */
-  async cachePrimaryImageAny(candidates, fileName) {
+  async cachePrimaryImageAny(candidates, fileName, medCard) {
     const seen = new Set();
     for (const c of candidates || []) {
       if (!c || !c.id) continue;
@@ -182,7 +271,9 @@ class EmbyJellyfinBase {
       if (seen.has(key)) continue;
       seen.add(key);
       try {
-        await core.CacheImage(this.primaryImageUrl(c.id, c.tag || null), fileName);
+        const imgUrl = this.primaryImageUrl(c.id, c.tag || null);
+        if (medCard) medCard.posterDownloadURL = imgUrl;
+        await this._cacheImageFromServer(imgUrl, fileName);
         return "/imagecache/" + fileName;
       } catch (e) {
         /* try next candidate */
@@ -438,7 +529,8 @@ class EmbyJellyfinBase {
             { id: item.Id, tag: trackTag },
             { id: item.Id, tag: null },
           ],
-          posterFile
+          posterFile,
+          medCard
         );
         medCard.posterURL = trackPoster || "/images/no-poster-available.png";
         medCard.posterAR = 1;
@@ -450,7 +542,7 @@ class EmbyJellyfinBase {
               "_"
             );
             try {
-              await core.CacheImage(
+              await this._cacheImageFromServer(
                 this.backdropImageUrl(albumIdBg, 0),
                 artFile
               );
@@ -487,7 +579,8 @@ class EmbyJellyfinBase {
             { id: item.Id, tag: null },
             { id: item.SeriesId || item.seriesId, tag: null },
           ],
-          posterFile
+          posterFile,
+          medCard
         );
         medCard.posterURL = bookPoster || "/images/no-cover-available.png";
         medCard.posterAR = type === "AudioBook" ? 1 : 1.47;
@@ -499,7 +592,10 @@ class EmbyJellyfinBase {
             "_"
           );
           try {
-            await core.CacheImage(this.backdropImageUrl(item.Id, 0), artFile);
+            await this._cacheImageFromServer(
+              this.backdropImageUrl(item.Id, 0),
+              artFile
+            );
             medCard.posterArtURL = "/imagecache/" + artFile;
           } catch (e) {
             /* optional backdrop */
@@ -540,14 +636,18 @@ class EmbyJellyfinBase {
             { id: imgId, tag: null },
             { id: item.Id, tag: null },
           ],
-          posterFile
+          posterFile,
+          medCard
         );
         medCard.posterURL = epPoster || "/images/no-poster-available.png";
 
         if (hasArt === "true" && item.SeriesId) {
           const artFile = `${mediaId}-art.jpg`;
           try {
-            await core.CacheImage(this.backdropImageUrl(item.SeriesId, 0), artFile);
+            await this._cacheImageFromServer(
+              this.backdropImageUrl(item.SeriesId, 0),
+              artFile
+            );
             medCard.posterArtURL = "/imagecache/" + artFile;
           } catch (e) {
             /* optional backdrop */
@@ -577,14 +677,18 @@ class EmbyJellyfinBase {
             },
             { id: item.Id, tag: null },
           ],
-          posterFile
+          posterFile,
+          medCard
         );
         medCard.posterURL = mvPoster || "/images/no-poster-available.png";
 
         if (hasArt === "true") {
           const artFile = `${item.Id}-art.jpg`.replace(/[^a-zA-Z0-9._-]/g, "_");
           try {
-            await core.CacheImage(this.backdropImageUrl(item.Id, 0), artFile);
+            await this._cacheImageFromServer(
+              this.backdropImageUrl(item.Id, 0),
+              artFile
+            );
             medCard.posterArtURL = "/imagecache/" + artFile;
           } catch (e) {
             /* optional */
@@ -625,7 +729,8 @@ class EmbyJellyfinBase {
             { id: item.SeriesId || item.seriesId, tag: null },
             { id: item.Id, tag: null },
           ],
-          `${String(item.Id || mediaId || "x").replace(/[^a-zA-Z0-9._-]/g, "_")}.jpg`
+          `${String(item.Id || mediaId || "x").replace(/[^a-zA-Z0-9._-]/g, "_")}.jpg`,
+          medCard
         );
         medCard.posterURL = anyPoster || "/images/no-poster-available.png";
         medCard.posterAR = 1.47;
@@ -690,6 +795,9 @@ class EmbyJellyfinBase {
           }
         }
       }
+
+        const rawItemId = item.Id || item.id;
+        if (rawItemId) medCard.posterApiItemId = String(rawItemId);
 
         if (okToAdd) {
           nsCards.push(medCard);
@@ -836,7 +944,29 @@ class EmbyJellyfinBase {
     return keys;
   }
 
-  async GetAllMediaForLibrary(libEntry, genres, recentlyAdded, contentRatings) {
+  async GetAllMediaForLibrary(
+    libEntry,
+    genres,
+    recentlyAdded,
+    contentRatings,
+    syncProgress
+  ) {
+    let fetchRow = null;
+    if (syncProgress && syncProgress.libraries) {
+      fetchRow = posterSyncLib.findLibraryRow(
+        syncProgress.libraries,
+        libEntry.name
+      );
+      if (fetchRow && fetchRow.fetchStatus !== "skipped") {
+        fetchRow.fetchStatus = "loading";
+      }
+    }
+    if (syncProgress) {
+      console.log(
+        new Date().toLocaleString() +
+          ` [poster sync] ${this.appName} — user id + item list for library “${libEntry.name || libEntry.id}”…`
+      );
+    }
     const userId = await this.getUserId();
     const includeTypes = this.includeItemTypesForCollection(libEntry.collectionType);
 
@@ -852,17 +982,47 @@ class EmbyJellyfinBase {
     let start = 0;
     // 100 keeps payload sizes moderate on large Jellyfin libraries.
     const limit = 100;
+    /** Avoid infinite loop if StartIndex is ignored or broken (would return full limit forever). */
+    const maxPages = 20000;
+    let page = 0;
     while (true) {
+      page++;
+      if (page > maxPages) {
+        console.log(
+          new Date().toLocaleString() +
+            ` [poster sync] ✘✘ WARNING ✘✘ — pagination stopped after ${maxPages} pages (~${all.length} items) in “${libEntry.name}” to avoid a runaway loop. Check Jellyfin / network.`
+        );
+        break;
+      }
+      if (syncProgress) {
+        syncProgress.label = `Fetching “${libEntry.name}”… ${all.length} items so far`;
+        if (page === 1 || page % 15 === 1) {
+          console.log(
+            new Date().toLocaleString() +
+              ` [poster sync] “${libEntry.name}” — GET /Users/…/Items StartIndex=${start} Limit=${limit} (slow servers: up to ${Math.round(
+                LIBRARY_ITEMS_PAGE_TIMEOUT_MS / 60000
+              )} min per page)…`
+          );
+        }
+      }
       const chunk = await this.apiGet(`/Users/${userId}/Items`, {
-        timeoutMs: 120000,
-        maxRetries: 1,
+        timeoutMs: LIBRARY_ITEMS_PAGE_TIMEOUT_MS,
+        maxRetries: 2,
         params: { ...baseParams, StartIndex: start, Limit: limit },
       });
       const items = chunk.Items || [];
       all = all.concat(items);
+      if (syncProgress) {
+        const logOften = page <= 3 || page % 10 === 0 || items.length < limit;
+        if (logOften) {
+          console.log(
+            new Date().toLocaleString() +
+              ` [poster sync] “${libEntry.name}” — page ${page}, +${items.length} rows, total ${all.length}`
+          );
+        }
+      }
       if (items.length < limit) break;
       start += limit;
-      if (start > 25000) break;
     }
 
     if (recentlyAdded > 0) {
@@ -905,21 +1065,57 @@ class EmbyJellyfinBase {
       }
     }
 
+    if (fetchRow && fetchRow.fetchStatus !== "skipped") {
+      fetchRow.fetchStatus = "done";
+      fetchRow.itemsFound = all.length;
+    }
     return all;
   }
 
-  async GetOnDemandRawData(onDemandLibraries, numberOnDemand, genres, recentlyAdded, contentRating) {
+  async GetOnDemandRawData(
+    onDemandLibraries,
+    numberOnDemand,
+    genres,
+    recentlyAdded,
+    contentRating,
+    fullLibraryForPosterSync,
+    syncProgress
+  ) {
     let odSet = [];
     try {
+      if (syncProgress) {
+        console.log(
+          new Date().toLocaleString() +
+            ` [poster sync] ${this.appName} — GET /Library/MediaFolders (match configured libraries)…`
+        );
+      }
       const libEntries = await this.GetLibraryKeys(onDemandLibraries);
+      if (syncProgress) {
+        console.log(
+          new Date().toLocaleString() +
+            ` [poster sync] ${this.appName} — ${libEntries.length} library folder(s) matched; loading items…`
+        );
+        syncProgress.libraries = posterSyncLib.buildLibraryProgressRows(
+          onDemandLibraries,
+          libEntries,
+          (e) => e.name,
+          (e) => e.name
+        );
+      }
       for (const entry of libEntries) {
         const result = await this.GetAllMediaForLibrary(
           entry,
           genres,
           recentlyAdded,
-          contentRating
+          contentRating,
+          syncProgress
         );
-        const od = await util.build_random_od_set(numberOnDemand, result, recentlyAdded);
+        const od = await util.build_random_od_set(
+          numberOnDemand,
+          result,
+          recentlyAdded,
+          fullLibraryForPosterSync ? { includeAll: true } : undefined
+        );
         for (const odc of od) {
           odc.ctype =
             recentlyAdded > 0 ? CardTypeEnum.RecentlyAdded : CardTypeEnum.OnDemand;
@@ -949,8 +1145,19 @@ class EmbyJellyfinBase {
     hasArt,
     genres,
     recentlyAdded,
-    contentRatings
+    contentRatings,
+    opts
   ) {
+    const posterSyncFull = opts && opts.posterSyncFullLibrary === true;
+    const sp = opts && opts.syncProgress;
+    if (posterSyncFull && sp) {
+      sp.phase = "fetching";
+      sp.label = "Fetching library from media server…";
+      sp.processed = 0;
+      sp.total = 0;
+    }
+    const effHasArt = posterSyncFull ? "true" : hasArt;
+
     let odCards = [];
     let odRaw;
     if (genres != undefined) {
@@ -971,13 +1178,33 @@ class EmbyJellyfinBase {
     }
 
     try {
-      if (recentlyAdded > 0) {
+      if (posterSyncFull) {
+        if (sp) {
+          const now = new Date();
+          console.log(
+            now.toLocaleString() +
+              " [poster sync] " +
+              this.appName +
+              " — fetching full library list…"
+          );
+        }
+        odRaw = await this.GetOnDemandRawData(
+          onDemandLibraries,
+          numberOnDemand,
+          genres,
+          0,
+          contentRatings,
+          true,
+          sp
+        );
+      } else if (recentlyAdded > 0) {
         odRaw = await this.GetOnDemandRawData(
           onDemandLibraries,
           numberOnDemand,
           genres,
           recentlyAdded,
-          contentRatings
+          contentRatings,
+          false
         );
         if (odRaw !== undefined) {
           odRaw = odRaw.concat(
@@ -986,7 +1213,8 @@ class EmbyJellyfinBase {
               numberOnDemand,
               genres,
               0,
-              contentRatings
+              contentRatings,
+              false
             )
           );
         } else {
@@ -995,7 +1223,8 @@ class EmbyJellyfinBase {
             numberOnDemand,
             genres,
             0,
-            contentRatings
+            contentRatings,
+            false
           );
         }
       } else {
@@ -1004,7 +1233,8 @@ class EmbyJellyfinBase {
           numberOnDemand,
           genres,
           0,
-          contentRatings
+          contentRatings,
+          false
         );
       }
     } catch (err) {
@@ -1018,6 +1248,20 @@ class EmbyJellyfinBase {
     }
 
     if (!odRaw || odRaw.length === 0) {
+      if (posterSyncFull && sp) {
+        sp.total = 0;
+        sp.processed = 0;
+        sp.phase = "complete";
+        sp.label = "No titles to sync";
+        if (sp.libraries) {
+          for (const row of sp.libraries) {
+            row.cacheTotal = 0;
+            row.itemsCached = 0;
+            row.cacheStatus =
+              row.fetchStatus === "skipped" ? "skipped" : "done";
+          }
+        }
+      }
       let now = new Date();
       if (onDemandLibraries && String(onDemandLibraries).trim()) {
         console.log(now.toLocaleString() + " *On-demand - No results returned - check library names or filters");
@@ -1025,8 +1269,38 @@ class EmbyJellyfinBase {
       return odCards;
     }
 
+    if (posterSyncFull && sp) {
+      sp.total = odRaw.length;
+      sp.phase = "caching";
+      sp.label = "Caching posters and images…";
+      const counts = posterSyncLib.countItemsByLibraryFields(odRaw, [
+        "_jfLibraryName",
+      ]);
+      for (const row of sp.libraries || []) {
+        row.cacheTotal = counts[row.name] || 0;
+        row.itemsCached = 0;
+        if (row.fetchStatus === "skipped") {
+          row.cacheStatus = "skipped";
+        } else {
+          row.cacheStatus = row.cacheTotal > 0 ? "pending" : "done";
+        }
+      }
+      const now = new Date();
+      console.log(
+        now.toLocaleString() +
+          " [poster sync] " +
+          this.appName +
+          " — " +
+          odRaw.length +
+          " item(s) to download (" +
+          onDemandLibraries +
+          ")"
+      );
+    }
+
     for (const md of odRaw) {
       const medCard = new mediaCard();
+      medCard.posterLibraryLabel = String(md._jfLibraryName || "").trim();
       const type = md.Type;
 
       if (type === "Series") {
@@ -1040,15 +1314,20 @@ class EmbyJellyfinBase {
           medCard.rating = Math.round(md.CommunityRating * 10) + "%";
         }
         const fileName = `${mediaId}.jpg`;
-        await core.CacheImage(
-          this.primaryImageUrl(md.Id, md.ImageTags && md.ImageTags.Primary),
-          fileName
+        const seriesPosterUrl = this.primaryImageUrl(
+          md.Id,
+          md.ImageTags && md.ImageTags.Primary
         );
+        medCard.posterDownloadURL = seriesPosterUrl;
+        await this._cacheImageFromServer(seriesPosterUrl, fileName);
         medCard.posterURL = "/imagecache/" + fileName;
-        if (hasArt === "true") {
+        if (effHasArt === "true") {
           const artName = `${mediaId}-art.jpg`;
           try {
-            await core.CacheImage(this.backdropImageUrl(md.Id, 0), artName);
+            await this._cacheImageFromServer(
+              this.backdropImageUrl(md.Id, 0),
+              artName
+            );
             medCard.posterArtURL = "/imagecache/" + artName;
           } catch (e) {
             /* optional */
@@ -1062,15 +1341,20 @@ class EmbyJellyfinBase {
         medCard.mediaType = "show";
       } else if (type === "Movie") {
         const movieFileName = `${md.Id}.jpg`.replace(/[^a-zA-Z0-9._-]/g, "_");
-        await core.CacheImage(
-          this.primaryImageUrl(md.Id, md.ImageTags && md.ImageTags.Primary),
-          movieFileName
+        const moviePosterUrl = this.primaryImageUrl(
+          md.Id,
+          md.ImageTags && md.ImageTags.Primary
         );
+        medCard.posterDownloadURL = moviePosterUrl;
+        await this._cacheImageFromServer(moviePosterUrl, movieFileName);
         medCard.posterURL = "/imagecache/" + movieFileName;
-        if (hasArt === "true") {
+        if (effHasArt === "true") {
           const artName = `${md.Id}-art.jpg`.replace(/[^a-zA-Z0-9._-]/g, "_");
           try {
-            await core.CacheImage(this.backdropImageUrl(md.Id, 0), artName);
+            await this._cacheImageFromServer(
+              this.backdropImageUrl(md.Id, 0),
+              artName
+            );
             medCard.posterArtURL = "/imagecache/" + artName;
           } catch (e) {
             /* optional */
@@ -1112,13 +1396,17 @@ class EmbyJellyfinBase {
               tag: null,
             },
           ],
-          albumFileName
+          albumFileName,
+          medCard
         );
         medCard.posterURL = albumPoster || "/images/no-poster-available.png";
-        if (hasArt === "true") {
+        if (effHasArt === "true") {
           const artName = `${md.Id}-art.jpg`.replace(/[^a-zA-Z0-9._-]/g, "_");
           try {
-            await core.CacheImage(this.backdropImageUrl(md.Id, 0), artName);
+            await this._cacheImageFromServer(
+              this.backdropImageUrl(md.Id, 0),
+              artName
+            );
             medCard.posterArtURL = "/imagecache/" + artName;
           } catch (e) {
             /* optional */
@@ -1178,12 +1466,62 @@ class EmbyJellyfinBase {
       );
       await this.cacheItemPersonPortraits(medCard, md, odPortraitKey);
 
+      if (md.Id) medCard.posterApiItemId = String(md.Id);
+
       odCards.push(medCard);
+      if (sp) {
+        sp.processed = odCards.length;
+      }
+      if (posterSyncFull && sp && sp.libraries) {
+        const lr = posterSyncLib.findLibraryRow(
+          sp.libraries,
+          medCard.posterLibraryLabel
+        );
+        if (lr && lr.cacheStatus !== "skipped") {
+          lr.cacheStatus = "running";
+          lr.itemsCached = (lr.itemsCached || 0) + 1;
+          if (lr.cacheTotal > 0 && lr.itemsCached >= lr.cacheTotal) {
+            lr.cacheStatus = "done";
+          }
+        }
+      }
+      if (posterSyncFull && sp) {
+        const n = odCards.length;
+        const total = sp.total || odRaw.length;
+        const step = Math.max(25, Math.min(500, Math.floor(total / 15) || 1));
+        if (n === 1 || n >= total || n % step === 0) {
+          const t = medCard.mediaType || String(type || "").toLowerCase() || "?";
+          const title = String(medCard.title || "").slice(0, 72);
+          console.log(
+            new Date().toLocaleString() +
+              " [poster sync] " +
+              n +
+              "/" +
+              total +
+              " " +
+              t +
+              ' — "' +
+              title +
+              '"'
+          );
+        }
+      }
     }
 
     let now = new Date();
     if (odCards.length === 0) {
       console.log(now.toLocaleString() + " No On-demand titles available");
+    } else if (posterSyncFull) {
+      console.log(
+        now.toLocaleString() +
+          " [poster sync] " +
+          this.appName +
+          " — finished caching " +
+          odCards.length +
+          " item(s) from (" +
+          onDemandLibraries +
+          ")"
+      );
     } else {
       console.log(
         now.toLocaleString() + " On-demand titles refreshed (" + onDemandLibraries + ")"
@@ -1214,7 +1552,10 @@ class EmbyJellyfinBase {
         "";
       const fn = `${safe}-${suffix}.jpg`;
       try {
-        await core.CacheImage(this.primaryImageUrl(pid, tag || null), fn);
+        await this._cacheImageFromServer(
+          this.primaryImageUrl(pid, tag || null),
+          fn
+        );
         return "/imagecache/" + fn;
       } catch (e) {
         return "";
@@ -1292,7 +1633,10 @@ class EmbyJellyfinBase {
           "";
         const fn = `${safe}-artist.jpg`;
         try {
-          await core.CacheImage(this.primaryImageUrl(pid, tag || null), fn);
+          await this._cacheImageFromServer(
+            this.primaryImageUrl(pid, tag || null),
+            fn
+          );
           medCard.portraitArtistURL = "/imagecache/" + fn;
         } catch (e) {
           /* optional */
@@ -1317,7 +1661,8 @@ class EmbyJellyfinBase {
           SortOrder: "Descending",
           Limit: limit,
         },
-        timeoutMs: 120000,
+        timeoutMs: LIBRARY_ITEMS_PAGE_TIMEOUT_MS,
+        maxRetries: 1,
       });
       const items = (data && data.Items) || [];
       return items
@@ -1327,6 +1672,29 @@ class EmbyJellyfinBase {
     } catch (e) {
       return [];
     }
+  }
+
+  /**
+   * True if a cached poster row's library item no longer exists on Jellyfin/Emby.
+   * @param {{ apiItemId?: string, sourceUrl?: string }} entry
+   */
+  async posterMetadataEntryGone(entry) {
+    const { probeImageUrlGone } = require("../core/posterMetadataProbe");
+    const id = String(entry.apiItemId || "").trim();
+    if (id) {
+      try {
+        const userId = await this.getUserId();
+        await this.apiGet(`/Users/${userId}/Items/${encodeURIComponent(id)}`, {
+          timeoutMs: 12000,
+        });
+        return false;
+      } catch (e) {
+        const st = e.response && e.response.status;
+        if (st === 404 || st === 410) return true;
+        return false;
+      }
+    }
+    return probeImageUrlGone(entry.sourceUrl);
   }
 }
 

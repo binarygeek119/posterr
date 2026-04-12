@@ -2,6 +2,10 @@
 # Copy to docker-compose.override.yml or merge into your stack, then:
 #   docker compose -f docker-compose.yml -f docker-compose.media-servers.example.yml up -d
 #
+# If you use this file without docker-compose.yml, add volume mounts for Posterr:
+#   config → /usr/src/app/config
+#   saved  → /usr/src/app/saved   (poster metadata + imagecache; needed for full library sync)
+#
 # Posterr settings:
 #   Server type: Jellyfin
 #   Host: jellyfin   (service name — NOT localhost)

@@ -103,6 +103,11 @@ class Settings {
     this.links = DEFAULT_SETTINGS.links;
     this.rotate = DEFAULT_SETTINGS.rotate;
     this.excludeLibs = DEFAULT_SETTINGS.excludeLibs;
+    this.posterCacheRefreshMins = DEFAULT_SETTINGS.posterCacheRefreshMins;
+    this.posterCacheMinAgeBeforeChangeCheckMins =
+      DEFAULT_SETTINGS.posterCacheMinAgeBeforeChangeCheckMins;
+    this.preferCachedPosters = DEFAULT_SETTINGS.preferCachedPosters;
+    this.cachedPosterSlideCount = DEFAULT_SETTINGS.cachedPosterSlideCount;
     return;
   }
 
@@ -184,6 +189,10 @@ class Settings {
       if(readSettings.displayPosterDirector==undefined) readSettings.displayPosterDirector = 'false';
       if(readSettings.displayPosterAuthor==undefined) readSettings.displayPosterAuthor = 'false';
       if(readSettings.displayPosterArtist==undefined) readSettings.displayPosterArtist = 'false';
+      if(readSettings.posterCacheRefreshMins === undefined) readSettings.posterCacheRefreshMins = 0;
+      if(readSettings.posterCacheMinAgeBeforeChangeCheckMins === undefined) readSettings.posterCacheMinAgeBeforeChangeCheckMins = 0;
+      if(readSettings.preferCachedPosters === undefined) readSettings.preferCachedPosters = 'true';
+      if(readSettings.cachedPosterSlideCount === undefined) readSettings.cachedPosterSlideCount = 48;
       if(readSettings.enableLidarr==undefined) readSettings.enableLidarr = 'true';
       if(readSettings.lidarrURL==undefined) readSettings.lidarrURL = '';
       if(readSettings.lidarrToken==undefined) readSettings.lidarrToken = '';
@@ -464,6 +473,51 @@ class Settings {
     else this.rotate = cs.rotate;
     if (jsonObject.excludeLibs) this.excludeLibs = jsonObject.excludeLibs;
     else this.excludeLibs = cs.excludeLibs;
+    if (
+      jsonObject.posterCacheRefreshMins !== undefined &&
+      jsonObject.posterCacheRefreshMins !== null &&
+      jsonObject.posterCacheRefreshMins !== ""
+    ) {
+      const n = parseInt(jsonObject.posterCacheRefreshMins, 10);
+      this.posterCacheRefreshMins = isNaN(n) ? 0 : Math.max(0, n);
+    } else {
+      this.posterCacheRefreshMins =
+        cs.posterCacheRefreshMins !== undefined
+          ? cs.posterCacheRefreshMins
+          : DEFAULT_SETTINGS.posterCacheRefreshMins;
+    }
+    if (
+      jsonObject.posterCacheMinAgeBeforeChangeCheckMins !== undefined &&
+      jsonObject.posterCacheMinAgeBeforeChangeCheckMins !== null &&
+      jsonObject.posterCacheMinAgeBeforeChangeCheckMins !== ""
+    ) {
+      const n = parseInt(jsonObject.posterCacheMinAgeBeforeChangeCheckMins, 10);
+      this.posterCacheMinAgeBeforeChangeCheckMins = isNaN(n)
+        ? 0
+        : Math.max(0, n);
+    } else {
+      this.posterCacheMinAgeBeforeChangeCheckMins =
+        cs.posterCacheMinAgeBeforeChangeCheckMins !== undefined
+          ? cs.posterCacheMinAgeBeforeChangeCheckMins
+          : DEFAULT_SETTINGS.posterCacheMinAgeBeforeChangeCheckMins;
+    }
+    if (jsonObject.preferCachedPosters) this.preferCachedPosters = jsonObject.preferCachedPosters;
+    else this.preferCachedPosters = "false";
+    if (
+      jsonObject.cachedPosterSlideCount !== undefined &&
+      jsonObject.cachedPosterSlideCount !== null &&
+      jsonObject.cachedPosterSlideCount !== ""
+    ) {
+      const n = parseInt(jsonObject.cachedPosterSlideCount, 10);
+      this.cachedPosterSlideCount = isNaN(n) || n < 1 || !Number.isFinite(n)
+        ? DEFAULT_SETTINGS.cachedPosterSlideCount
+        : Math.floor(n);
+    } else {
+      this.cachedPosterSlideCount =
+        cs.cachedPosterSlideCount !== undefined
+          ? cs.cachedPosterSlideCount
+          : DEFAULT_SETTINGS.cachedPosterSlideCount;
+    }
 
     // convert JSON object to string (pretty format)
     const data = JSON.stringify(this, null, 4);

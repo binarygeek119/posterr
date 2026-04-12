@@ -29,8 +29,10 @@ const movieTrailers = require("./classes/arr/radarrtrailers");
 const {
   getMediaServerClass,
   getMediaServerShortLabel,
+  getMediaServerKind,
   requiresMediaServerCredential,
 } = require("./classes/mediaservers/mediaServerFactory");
+const posterMetadata = require("./classes/core/posterMetadataDb");
 
 // just in case someone puts in a / for the basepath value
 if (process.env.BASEPATH == "/") process.env.BASEPATH = "";
@@ -83,10 +85,12 @@ let radarrClock;
 let lidarrClock;
 let readarrClock;
 let houseKeepingClock;
+let posterMetadataRefreshClock;
 let picturesClock;
 let linksClock;
 let setng = new settings();
 let loadedSettings;
+let httpServerStarted = false;
 //let endPoint = "https://logz-dev.nesretep.net/pstr";
 let endPoint = "https://logz.nesretep.net/pstr";
 let nsCheckSeconds = 10000; // how often now screening checks are performed. (not available in setup screen as running too often can cause network issues)
@@ -531,6 +535,35 @@ async function loadPictures() {
   return picCards;
 }
 
+function preferCachedPostersEnabled() {
+  if (!loadedSettings) return true;
+  const v = loadedSettings.preferCachedPosters;
+  if (v === undefined || v === null) return true;
+  const s = String(v).toLowerCase().trim();
+  return s !== "false" && s !== "0" && s !== "off" && s !== "no";
+}
+
+function primaryCachedPosterSlideCount() {
+  const raw = loadedSettings && loadedSettings.cachedPosterSlideCount;
+  const parsed = parseInt(raw, 10);
+  if (!isNaN(parsed) && parsed > 0 && Number.isFinite(parsed)) return parsed;
+  return 48;
+}
+
+/** Library-style slides: cached poster DB first when enabled; live on-demand only as backup. */
+function buildLibrarySlideDeckFromPosterCache() {
+  if (!preferCachedPostersEnabled()) return odCards;
+  const kind = loadedSettings
+    ? getMediaServerKind(loadedSettings.mediaServerType)
+    : "";
+  const cached = posterMetadata.buildFallbackMediaCards(
+    primaryCachedPosterSlideCount(),
+    kind
+  );
+  if (cached.length > 0) return cached;
+  return odCards;
+}
+
 /**
  * @desc Wrapper function to call now screening method.
  * @returns {Promise<object>} mediaCards array - results of now screening search
@@ -729,6 +762,8 @@ async function loadNowScreening() {
     isMediaServerUnavailable = true;
   }
 
+  const librarySlideCards = buildLibrarySlideDeckFromPosterCache();
+
   // Concatenate cards for all objects load now showing and on-demand cards, else just on-demand (if present)
   // TODO - move this into its own function!
   let mCards = [];
@@ -751,10 +786,10 @@ async function loadNowScreening() {
 
     if (loadedSettings.pinNS !== "true") {
       if (loadedSettings.shuffleSlides !== undefined && loadedSettings.shuffleSlides == "true") {
-        mCards = nsCards.concat(odCards.concat(csCards.concat(csrCards).concat(cslCards).concat(picCards).concat(linkCards).concat(csbCards).concat(trivCards)).sort(() => Math.random() - 0.5));
+        mCards = nsCards.concat(librarySlideCards.concat(csCards.concat(csrCards).concat(cslCards).concat(picCards).concat(linkCards).concat(csbCards).concat(trivCards)).sort(() => Math.random() - 0.5));
       }
       else {
-        mCards = nsCards.concat(odCards);
+        mCards = nsCards.concat(librarySlideCards);
         mCards = mCards.concat(picCards);
         mCards = mCards.concat(csCards);
         mCards = mCards.concat(csrCards);
@@ -789,12 +824,12 @@ async function loadNowScreening() {
   //  mCards = [];
 
     pinnedMode = false;
-    if (odCards.length > 0) {
+    if (librarySlideCards.length > 0) {
       if (loadedSettings.shuffleSlides !== undefined && loadedSettings.shuffleSlides == "true") {
-        mCards = odCards.concat(csCards.concat(csrCards).concat(cslCards).concat(picCards).concat(csbCards).concat(linkCards).concat(trivCards)).sort(() => Math.random() - 0.5);
+        mCards = librarySlideCards.concat(csCards.concat(csrCards).concat(cslCards).concat(picCards).concat(csbCards).concat(linkCards).concat(trivCards)).sort(() => Math.random() - 0.5);
       }
       else {
-        mCards = odCards.concat(csCards);
+        mCards = librarySlideCards.concat(csCards);
         mCards = mCards.concat(picCards);
         mCards = mCards.concat(csrCards);
         mCards = mCards.concat(cslCards);
@@ -882,6 +917,43 @@ async function loadNowScreening() {
     }
 //console.log(linkCards.length);
 //    globalPage.cards = mCards;
+  }
+
+  if (isMediaServerEnabled) {
+    posterMetadata.registerFromMediaServerCards(
+      nsCards,
+      odCards,
+      getMediaServerKind(loadedSettings.mediaServerType)
+    );
+    posterMetadata
+      .purgeMissingServerItems({
+        currentServerKind: getMediaServerKind(loadedSettings.mediaServerType),
+        isMediaServerEnabled,
+        maxChecks: 8,
+        minAgeBeforeChangeCheckMins: Math.max(
+          0,
+          parseInt(loadedSettings.posterCacheMinAgeBeforeChangeCheckMins, 10) ||
+            0
+        ),
+        probeEntryGone: probePosterMetadataEntryGone,
+      })
+      .catch(() => {});
+  }
+  if (globalPage.cards.length === 0) {
+    const cached = posterMetadata.buildFallbackMediaCards(
+      posterMetadata.DEFAULT_FALLBACK_COUNT,
+      getMediaServerKind(loadedSettings.mediaServerType)
+    );
+    if (cached.length > 0) {
+      globalPage.cards = cached;
+      let now = new Date();
+      console.log(
+        now.toLocaleString() +
+          " Poster cache: displaying " +
+          cached.length +
+          " cached poster(s) (no other slides)"
+      );
+    }
   }
 
   // setup transition - fade or default slide
@@ -994,6 +1066,12 @@ async function loadOnDemand() {
       loadedSettings.recentlyAddedDays,
       loadedSettings.contentRatings
     );
+    if (preferCachedPostersEnabled()) {
+      posterMetadata.applyCachedPostersToMediaCards(
+        odCards,
+        getMediaServerKind(loadedSettings.mediaServerType)
+      );
+    }
   } catch (err) {
     let d = new Date();
     console.log(d.toLocaleString() + " *On-demand - Get full data: " + err);
@@ -1320,6 +1398,275 @@ async function theaterOff(theater) {
     console.log(d.toLocaleString() + ` ** Theatre mode deactivated`);
 }
 
+async function probePosterMetadataEntryGone(entry) {
+  if (!isMediaServerEnabled || !loadedSettings) return false;
+  try {
+    const Pms = getMediaServerClass(loadedSettings.mediaServerType);
+    const ms = new Pms({
+      plexHTTPS: loadedSettings.plexHTTPS,
+      plexIP: loadedSettings.plexIP,
+      plexPort: loadedSettings.plexPort,
+      plexToken: loadedSettings.plexToken,
+    });
+    if (typeof ms.posterMetadataEntryGone !== "function") return false;
+    return await ms.posterMetadataEntryGone(entry);
+  } catch (e) {
+    return false;
+  }
+}
+
+function newMediaServerClient() {
+  const Pms = getMediaServerClass(loadedSettings.mediaServerType);
+  return new Pms({
+    plexHTTPS: loadedSettings.plexHTTPS,
+    plexIP: loadedSettings.plexIP,
+    plexPort: loadedSettings.plexPort,
+    plexToken: loadedSettings.plexToken,
+  });
+}
+
+function getConfiguredOnDemandLibraryNames(libsCsv) {
+  return String(libsCsv || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/** @returns {string|null} Canonical name from settings, or null */
+function matchConfiguredLibraryName(requested, configuredNames) {
+  const r = String(requested || "").trim();
+  if (!r) return null;
+  const rl = r.toLowerCase();
+  for (const c of configuredNames) {
+    if (c.toLowerCase() === rl) return c;
+  }
+  return null;
+}
+
+/** Live state for full-library poster sync (UI polls GET /settings/sync/progress). */
+const posterSyncProgressState = {
+  status: "idle",
+  phase: "",
+  label: "",
+  processed: 0,
+  total: 0,
+  libraries: [],
+  syncScope: "all",
+  syncSingleLibrary: "",
+  serverKind: "",
+  error: "",
+  startedAt: null,
+  finishedAt: null,
+};
+
+function schedulePosterSyncIdleReset(delayMs) {
+  const delay = delayMs != null ? delayMs : 12000;
+  setTimeout(() => {
+    if (
+      posterSyncProgressState.status === "done" ||
+      posterSyncProgressState.status === "error"
+    ) {
+      posterSyncProgressState.status = "idle";
+      posterSyncProgressState.phase = "";
+      posterSyncProgressState.label = "";
+      posterSyncProgressState.processed = 0;
+      posterSyncProgressState.total = 0;
+      posterSyncProgressState.libraries = [];
+      posterSyncProgressState.syncScope = "all";
+      posterSyncProgressState.syncSingleLibrary = "";
+      posterSyncProgressState.error = "";
+      posterSyncProgressState.serverKind = "";
+      posterSyncProgressState.startedAt = null;
+      posterSyncProgressState.finishedAt = null;
+    }
+  }, delay);
+}
+
+/**
+ * Register posters for every item in the configured on-demand libraries (same genre/content filters as on-demand).
+ * Runs at startup and on each poster-cache refresh tick. Updates posterSyncProgressState when opts.syncProgress is passed (manual sync from UI).
+ * @param {{ singleLibrary?: string }} [options] If singleLibrary is set, only that library (must match a configured on-demand name, case-insensitive) is synced.
+ */
+async function syncFullPosterLibraryFromMediaServer(options) {
+  if (posterSyncProgressState.status === "running") {
+    return;
+  }
+  if (!loadedSettings || !isMediaServerEnabled) return;
+  if (
+    !loadedSettings.onDemandLibraries ||
+    !String(loadedSettings.onDemandLibraries).trim()
+  ) {
+    return;
+  }
+  const configuredNames = getConfiguredOnDemandLibraryNames(
+    loadedSettings.onDemandLibraries
+  );
+  const singleRaw =
+    options && options.singleLibrary != null
+      ? String(options.singleLibrary).trim()
+      : "";
+  let libraryCsv = String(loadedSettings.onDemandLibraries).trim();
+  if (singleRaw) {
+    const resolved = matchConfiguredLibraryName(singleRaw, configuredNames);
+    if (!resolved) {
+      return;
+    }
+    libraryCsv = resolved;
+  }
+  let ms;
+  try {
+    ms = newMediaServerClient();
+  } catch (e) {
+    return;
+  }
+  if (!ms || typeof ms.GetOnDemand !== "function") return;
+
+  posterSyncProgressState.status = "running";
+  posterSyncProgressState.phase = "starting";
+  posterSyncProgressState.label = singleRaw
+    ? "Starting (one library)…"
+    : "Starting…";
+  posterSyncProgressState.processed = 0;
+  posterSyncProgressState.total = 0;
+  posterSyncProgressState.libraries = [];
+  posterSyncProgressState.syncScope = singleRaw ? "single" : "all";
+  posterSyncProgressState.syncSingleLibrary = singleRaw ? libraryCsv : "";
+  posterSyncProgressState.error = "";
+  posterSyncProgressState.startedAt = Date.now();
+  posterSyncProgressState.finishedAt = null;
+  posterSyncProgressState.serverKind = getMediaServerKind(
+    loadedSettings.mediaServerType
+  );
+
+  const syncStarted = Date.now();
+  console.log(
+    new Date().toLocaleString() +
+      " [poster sync] start — " +
+      posterSyncProgressState.serverKind +
+      ' — libraries: "' +
+      libraryCsv +
+      '"' +
+      (singleRaw ? " (single library)" : "")
+  );
+
+  try {
+    const cards = await ms.GetOnDemand(
+      libraryCsv,
+      loadedSettings.numberOnDemand,
+      loadedSettings.playThemes,
+      loadedSettings.genericThemes,
+      loadedSettings.hasArt,
+      loadedSettings.genres,
+      loadedSettings.recentlyAddedDays,
+      loadedSettings.contentRatings,
+      {
+        posterSyncFullLibrary: true,
+        syncProgress: posterSyncProgressState,
+      }
+    );
+    posterSyncProgressState.phase = "registering";
+    posterSyncProgressState.label = "Saving poster metadata…";
+    posterSyncProgressState.processed = cards.length;
+    posterSyncProgressState.total = Math.max(
+      posterSyncProgressState.total,
+      cards.length
+    );
+    console.log(
+      new Date().toLocaleString() +
+        " [poster sync] caching done — " +
+        cards.length +
+        " title(s) in " +
+        Math.max(1, Math.round((Date.now() - syncStarted) / 1000)) +
+        "s — saving metadata DB…"
+    );
+    posterMetadata.registerFromMediaServerCards(
+      [],
+      cards,
+      posterSyncProgressState.serverKind
+    );
+    posterSyncProgressState.status = "done";
+    posterSyncProgressState.phase = "complete";
+    posterSyncProgressState.label =
+      "Complete — " + cards.length + " title(s) cached";
+    posterSyncProgressState.finishedAt = Date.now();
+    console.log(
+      new Date().toLocaleString() +
+        " [poster sync] complete — " +
+        cards.length +
+        " title(s) registered (" +
+        Math.round((Date.now() - syncStarted) / 1000) +
+        "s total)"
+    );
+    schedulePosterSyncIdleReset(12000);
+  } catch (e) {
+    posterSyncProgressState.status = "error";
+    posterSyncProgressState.phase = "error";
+    posterSyncProgressState.error = e && e.message ? e.message : String(e);
+    posterSyncProgressState.label = "Sync failed";
+    posterSyncProgressState.finishedAt = Date.now();
+    const d = new Date();
+    console.log(
+      d.toLocaleString() +
+        " [poster sync] failed — " +
+        posterSyncProgressState.error
+    );
+    schedulePosterSyncIdleReset(20000);
+  }
+}
+
+function schedulePosterMetadataRefresh() {
+  clearInterval(posterMetadataRefreshClock);
+  if (!loadedSettings) return;
+  const prMins = Math.max(
+    0,
+    parseInt(loadedSettings.posterCacheRefreshMins, 10) || 0
+  );
+  if (prMins <= 0) return;
+  const tickMs = Math.max(5 * 60 * 1000, prMins * 60 * 1000);
+  posterMetadataRefreshClock = setInterval(() => {
+    (async () => {
+      try {
+        let imageDownloadHeaders;
+        if (
+          getMediaServerKind(loadedSettings.mediaServerType) === "jellyfin"
+        ) {
+          try {
+            const jfMs = newMediaServerClient();
+            if (
+              jfMs &&
+              typeof jfMs.jellyfinImageAuthHeaders === "function"
+            ) {
+              imageDownloadHeaders = jfMs.jellyfinImageAuthHeaders();
+            }
+          } catch (e) {
+            /* ignore */
+          }
+        }
+        await posterMetadata.runScheduledRefresh({
+          refreshMins: prMins,
+          minAgeBeforeChangeCheckMins: Math.max(
+            0,
+            parseInt(loadedSettings.posterCacheMinAgeBeforeChangeCheckMins, 10) ||
+              0
+          ),
+          currentServerKind: getMediaServerKind(loadedSettings.mediaServerType),
+          isMediaServerEnabled,
+          probeEntryGone: probePosterMetadataEntryGone,
+          imageDownloadHeaders: imageDownloadHeaders || undefined,
+        });
+      } catch (err) {
+        const d = new Date();
+        console.log(
+          d.toLocaleString() +
+            " Poster cache refresh error: " +
+            (err && err.message ? err.message : err)
+        );
+      }
+      await syncFullPosterLibraryFromMediaServer();
+    })();
+  }, tickMs);
+}
+
 async function suspend() {
   // stop all clocks
   clearInterval(nowScreeningClock);
@@ -1331,6 +1678,7 @@ async function suspend() {
   clearInterval(readarrClock);
   clearInterval(lidarrClock);
   clearInterval(linksClock);
+  clearInterval(posterMetadataRefreshClock);
   // set to sleep
   sleep = "true";
   // loadedSettings.playThemes = 'false';
@@ -1361,8 +1709,18 @@ async function wake(theater) {
   if (isTriviaEnabled) await loadTrivia();
   if (isLinksEnabled) await loadLinks();
   await loadNowScreening();
+  schedulePosterMetadataRefresh();
   let d = new Date();
   if(theater !== true) console.log(d.toLocaleString() + ` ** Sleep mode terminated (next activation at ` + loadedSettings.sleepStart + `)`);
+}
+
+/** Bind HTTP listener once, after settings exist (avoids 401/undefined races while GetSettings() delays). */
+function startHttpServerOnce() {
+  if (httpServerStarted) return;
+  httpServerStarted = true;
+  app.listen(PORT, () => {
+    console.log(`✅ Web server started on internal port ` + PORT);
+  });
 }
 
 /**
@@ -1381,6 +1739,7 @@ async function startup(clearCache) {
   clearInterval(lidarrClock);
   clearInterval(triviaClock);
   clearInterval(linksClock);
+  clearInterval(posterMetadataRefreshClock);
 
   picCards = [];
   odCards = [];
@@ -1401,6 +1760,8 @@ async function startup(clearCache) {
 // TODO to remove this!       console.log(clearCache);
   // load settings object
   loadedSettings = await Promise.resolve(await loadSettings());
+  await posterMetadata.initPosterMetadataDb();
+  startHttpServerOnce();
   if (loadedSettings == 'undefined') {
     console.load('settings not loaded!!');
   }
@@ -1474,6 +1835,8 @@ async function startup(clearCache) {
   }
 
   await loadNowScreening();
+
+  syncFullPosterLibraryFromMediaServer().catch(() => {});
 
   // let now = new Date();
   // console.log(
@@ -1569,6 +1932,9 @@ async function startup(clearCache) {
     clearInterval(sleepClock);
     sleep = "false";
   }
+
+  schedulePosterMetadataRefresh();
+
   // restart timer
   houseKeepingClock = setInterval(startup, restartSeconds); // daily
 
@@ -1592,6 +1958,7 @@ async function saveReset(formObject) {
   clearInterval(picturesClock);
   clearInterval(triviaClock);
   clearInterval(linksClock);
+  clearInterval(posterMetadataRefreshClock);
 
   // clear cards
   nsCards = [];
@@ -1877,7 +2244,8 @@ app.post(
         customPicFolders: customPicFolders,
         latestVersion: latestVersion,
         message: message,
-        updateAvailable: updateAvailable
+        updateAvailable: updateAvailable,
+        cacheClearNotice: null
       });
     }
   }
@@ -1887,6 +2255,9 @@ app.post(
 app.get(BASEURL + "/settings", (req, res) => {
   // load pic folders
   customPicFolders = getDirectories('./public/custom/pictures');
+
+  const cacheClearNotice = req.session.cacheClearNotice || null;
+  req.session.cacheClearNotice = null;
 
   if (loadedSettings.password == undefined) {
     res.render("settings", {
@@ -1899,7 +2270,8 @@ app.get(BASEURL + "/settings", (req, res) => {
       customPicFolders: customPicFolders,
       latestVersion: latestVersion,
       message: message,
-      updateAvailable: updateAvailable
+      updateAvailable: updateAvailable,
+      cacheClearNotice: cacheClearNotice
     });
   }
   else {
@@ -1913,11 +2285,215 @@ app.get(BASEURL + "/settings", (req, res) => {
       customPicFolders: customPicFolders,
       latestVersion: latestVersion,
       message: message,
-      updateAvailable: updateAvailable
-
+      updateAvailable: updateAvailable,
+      cacheClearNotice: cacheClearNotice
     });
   }
   req.session.errors = null;
+});
+
+app.post(BASEURL + "/settings/clear-poster-cache", async (req, res) => {
+  if (loadedSettings.password !== undefined && !userData.valid) {
+    return res.redirect(302, BASEURL + "/logon");
+  }
+  try {
+    await posterMetadata.clearPosterCacheAndMetadata();
+    req.session.cacheClearNotice = {
+      ok: true,
+      text: "Poster image cache and metadata database were cleared.",
+    };
+  } catch (err) {
+    let msg = err && err.message ? err.message : String(err);
+    req.session.cacheClearNotice = {
+      ok: false,
+      text: "Could not clear poster cache: " + msg,
+    };
+  }
+  res.redirect(302, BASEURL + "/settings");
+});
+
+app.get(BASEURL + "/settings/sync/progress", (req, res) => {
+  if (loadedSettings.password !== undefined && !userData.valid) {
+    return res.status(401).json({ error: "unauthorized" });
+  }
+  const st = posterSyncProgressState;
+  const total = Math.max(0, parseInt(st.total, 10) || 0);
+  const processed = Math.max(0, parseInt(st.processed, 10) || 0);
+  const libs = Array.isArray(st.libraries) ? st.libraries : [];
+
+  function fetchRatioFromLibraries(rows) {
+    if (!rows.length) return 0;
+    let w = 0;
+    for (const r of rows) {
+      const fs = r.fetchStatus;
+      if (fs === "done" || fs === "skipped") w += 1;
+      else if (fs === "loading") w += 0.5;
+    }
+    return w / rows.length;
+  }
+
+  let percent = null;
+  let indeterminate =
+    st.status === "running" &&
+    st.phase === "starting" &&
+    total === 0 &&
+    libs.length === 0;
+
+  if (st.status === "done") {
+    percent = 100;
+  } else if (st.status === "error") {
+    percent = null;
+  } else if (st.status === "running") {
+    if (st.phase === "registering") {
+      percent = 100;
+    } else if (st.phase === "fetching") {
+      percent = Math.round(50 * fetchRatioFromLibraries(libs));
+      if (libs.length === 0) {
+        indeterminate = true;
+        percent = null;
+      }
+    } else if (st.phase === "caching" && total > 0) {
+      percent = Math.min(
+        100,
+        Math.round(50 + (processed / total) * 50)
+      );
+    } else if (st.phase === "complete") {
+      percent = 100;
+    } else if (total > 0) {
+      percent = Math.min(100, Math.round((processed / total) * 100));
+    } else {
+      percent = 0;
+    }
+  }
+
+  const libraries = libs.map((r) => ({
+    name: r.name,
+    fetchStatus: r.fetchStatus,
+    itemsFound: r.itemsFound != null ? r.itemsFound : 0,
+    cacheStatus: r.cacheStatus,
+    itemsCached: r.itemsCached != null ? r.itemsCached : 0,
+    cacheTotal: r.cacheTotal != null ? r.cacheTotal : 0,
+  }));
+
+  res.json({
+    status: st.status,
+    phase: st.phase,
+    label: st.label,
+    processed,
+    total,
+    percent,
+    indeterminate,
+    error: st.error || null,
+    serverKind: st.serverKind || null,
+    libraries,
+    syncScope: st.syncScope || "all",
+    syncSingleLibrary: st.syncSingleLibrary || "",
+  });
+});
+
+app.get(BASEURL + "/settings/sync", (req, res) => {
+  customPicFolders = getDirectories("./public/custom/pictures");
+  const syncNotice = req.session.syncNotice || null;
+  req.session.syncNotice = null;
+  res.render("settings-sync", {
+    success: req.session.success,
+    user:
+      loadedSettings.password === undefined ? { valid: true } : userData,
+    settings: loadedSettings,
+    version: pjson.version,
+    baseUrl: BASEURL,
+    customPicFolders: customPicFolders,
+    latestVersion: latestVersion,
+    message: message,
+    updateAvailable: updateAvailable,
+    syncNotice: syncNotice,
+    onDemandLibraryList: getConfiguredOnDemandLibraryNames(
+      loadedSettings.onDemandLibraries
+    ),
+  });
+});
+
+app.post(BASEURL + "/settings/sync/trigger", (req, res) => {
+  if (loadedSettings.password !== undefined && !userData.valid) {
+    return res.redirect(302, BASEURL + "/logon");
+  }
+  if (!isMediaServerEnabled) {
+    req.session.syncNotice = {
+      ok: false,
+      text: "Media server is not configured or cannot be reached. Check Settings → Media server.",
+    };
+    return res.redirect(302, BASEURL + "/settings/sync");
+  }
+  const libs = loadedSettings.onDemandLibraries;
+  if (!libs || !String(libs).trim()) {
+    req.session.syncNotice = {
+      ok: false,
+      text: "Configure on-demand library names in Settings before running a full sync.",
+    };
+    return res.redirect(302, BASEURL + "/settings/sync");
+  }
+  if (posterSyncProgressState.status === "running") {
+    req.session.syncNotice = {
+      ok: false,
+      text: "A library sync is already running. Wait for it to finish.",
+    };
+    return res.redirect(302, BASEURL + "/settings/sync");
+  }
+  const bodyLib = req.body && req.body.library;
+  const wantSingle =
+    bodyLib != null && String(bodyLib).trim() !== "";
+  let syncOptions = {};
+  if (wantSingle) {
+    const names = getConfiguredOnDemandLibraryNames(libs);
+    const resolved = matchConfiguredLibraryName(bodyLib, names);
+    if (!resolved) {
+      req.session.syncNotice = {
+        ok: false,
+        text:
+          "That library is not in your configured on-demand list. Check spelling under Settings → Media server.",
+      };
+      return res.redirect(302, BASEURL + "/settings/sync");
+    }
+    syncOptions = { singleLibrary: resolved };
+  }
+  syncFullPosterLibraryFromMediaServer(syncOptions).catch((err) => {
+    const d = new Date();
+    console.log(
+      d.toLocaleString() +
+        " Manual poster sync error: " +
+        (err && err.message ? err.message : err)
+    );
+  });
+  res.redirect(302, BASEURL + "/settings/sync");
+});
+
+app.get(BASEURL + "/settings/cache/stats", (req, res) => {
+  if (loadedSettings.password !== undefined && !userData.valid) {
+    return res.status(401).json({ error: "unauthorized" });
+  }
+  try {
+    res.json(posterMetadata.getCacheDashboardStats());
+  } catch (e) {
+    res
+      .status(500)
+      .json({ error: e && e.message ? e.message : String(e) });
+  }
+});
+
+app.get(BASEURL + "/settings/cache", (req, res) => {
+  customPicFolders = getDirectories("./public/custom/pictures");
+  res.render("settings-cache", {
+    success: req.session.success,
+    user:
+      loadedSettings.password === undefined ? { valid: true } : userData,
+    settings: loadedSettings,
+    version: pjson.version,
+    baseUrl: BASEURL,
+    customPicFolders: customPicFolders,
+    latestVersion: latestVersion,
+    message: message,
+    updateAvailable: updateAvailable,
+  });
 });
 
 app.post(
@@ -2162,6 +2738,28 @@ app.post(
       links: req.body.links,
       rotate: req.body.rotate,
       excludeLibs: req.body.excludeLibs,
+      posterCacheRefreshMins: (() => {
+        const raw = req.body.posterCacheRefreshMins;
+        if (raw === undefined || raw === null || raw === "") return 0;
+        const n = parseInt(raw, 10);
+        return isNaN(n) ? 0 : Math.max(0, n);
+      })(),
+      posterCacheMinAgeBeforeChangeCheckMins: (() => {
+        const raw = req.body.posterCacheMinAgeBeforeChangeCheckMins;
+        if (raw === undefined || raw === null || raw === "") return 0;
+        const n = parseInt(raw, 10);
+        return isNaN(n) ? 0 : Math.max(0, n);
+      })(),
+      preferCachedPosters: req.body.preferCachedPosters,
+      cachedPosterSlideCount: (() => {
+        const raw = req.body.cachedPosterSlideCount;
+        if (raw === undefined || raw === null || raw === "")
+          return DEFAULT_SETTINGS.cachedPosterSlideCount;
+        const n = parseInt(raw, 10);
+        return isNaN(n) || n < 1 || !Number.isFinite(n)
+          ? DEFAULT_SETTINGS.cachedPosterSlideCount
+          : Math.floor(n);
+      })(),
       saved: false
     };
 
@@ -2195,7 +2793,8 @@ app.post(
         baseUrl: BASEURL,
         customPicFolders: customPicFolders,
         latestVersion: latestVersion,
-        message: message
+        message: message,
+        cacheClearNotice: null
       });
     } else {
       // save settings
@@ -2212,28 +2811,25 @@ app.post(
         customPicFolders: customPicFolders,
         latestVersion: latestVersion,
         message: message,
-        updateAvailable: updateAvailable
+        updateAvailable: updateAvailable,
+        cacheClearNotice: null
       });
     }
   }
 );
 
-// start listening on port 3000
-app.listen(PORT, () => {
-  console.log(`✅ Web server started on internal port ` + PORT);
-});
-
 function dumpError(err) {
-  if (typeof err === 'object') {
+  if (typeof err === "object" && err !== null) {
     if (err.message) {
-      console.log('\nMessage: ' + err.message)
+      console.log("\nMessage: " + err.message);
     }
     if (err.stack) {
-      console.log('\nStacktrace:')
-      console.log('====================')
+      console.log("\nStacktrace:");
+      console.log("====================");
       console.log(err.stack);
     }
-  } else {
-    console.log('dumpError :: argument is not an object');
+    return err.message || String(err);
   }
+  console.log("dumpError :: argument is not an object");
+  return String(err);
 }

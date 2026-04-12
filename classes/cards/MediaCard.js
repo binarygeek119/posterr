@@ -13,6 +13,14 @@ class MediaCard {
     this.title = "";
     this.year = "";
     this.posterURL = "";
+    /** Original poster image URL used before caching (for periodic cache refresh) */
+    this.posterDownloadURL = "";
+    /** Stable server item id for delete checks (Plex ratingKey, Jellyfin Id, Kodi movie/show/episode id) */
+    this.posterApiItemId = "";
+    /** Kodi: movie | show | episode */
+    this.posterLibraryKind = "";
+    /** Plex/Jellyfin/Emby/Kodi on-demand library display name (for cache stats) */
+    this.posterLibraryLabel = "";
     this.posterArtURL = "";
     this.posterAR = "";
     this.contentRating = "";

@@ -1,5 +1,9 @@
 # Posterr — requires Docker Engine 20.10+ for host.docker.internal (Linux).
 # Jellyfin / Emby / Kodi / Plex are reached over HTTP from Posterr settings (no extra container packages).
+#
+# Volumes:
+#   config/  — settings.json and other config (required to keep setup across restarts).
+#   saved/   — poster metadata DB, imagecache, mp3cache (required for poster library sync / “prefer cached posters”).
 
 version: "3.8"
 
@@ -18,6 +22,7 @@ services:
     volumes:
       - ~/docker/posterr/custom:/usr/src/app/public/custom
       - ~/docker/posterr/config:/usr/src/app/config
+      - ~/docker/posterr/saved:/usr/src/app/saved
     ports:
       - 9876:3000
     restart: unless-stopped

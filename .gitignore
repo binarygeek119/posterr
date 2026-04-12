@@ -1,7 +1,11 @@
 # ignore the following folders
+/docker-data
 /node_modules
 /saved/mp3cache/**
 /saved/imagecache/**
+/saved/posterr-poster-metadata.json
+/saved/posterr-poster-metadata.json.migrated.bak
+/saved/posterr-poster-metadata.db
 /config/*.json
 /dist
 /public/custom/**

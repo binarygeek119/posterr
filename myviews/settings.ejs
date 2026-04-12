@@ -49,6 +49,9 @@
   <%if(typeof formData !== 'undefined' && formData.saved == true) {%><script language='javascript'>
     alert("Posterr Settings Saved. Please allow a few seconds for Posterr to restart.");
   </script><%}%>
+  <%if(typeof cacheClearNotice !== 'undefined' && cacheClearNotice && cacheClearNotice.text) {%><script>
+    alert(<%- JSON.stringify(cacheClearNotice.text) %>);
+  </script><%}%>
     <!-- Layout -->
     <div class="row gutters-sm">
       <!-- Side Menu View -->
@@ -58,6 +61,12 @@
             <nav class="nav flex-column nav-pills nav-gap-y-1">
               <a href="#settings" data-toggle="tab" class="nav-item nav-link has-icon nav-link-faded active">
                 <i class="fal fa-cog"></i><span class="menu">Settings</span>
+              </a>
+              <a href="<%=baseUrl%>/settings/sync" class="nav-item nav-link has-icon nav-link-faded">
+                <i class="fal fa-sync"></i><span class="menu">Sync</span>
+              </a>
+              <a href="<%=baseUrl%>/settings/cache" class="nav-item nav-link has-icon nav-link-faded">
+                <i class="fal fa-database"></i><span class="menu">Cache</span>
               </a>
               <a href="<%=baseUrl%>/debug" class="nav-item nav-link has-icon nav-link-faded">
   <i class="fal fa-debug"></i><span class="menu">Debug</span>
@@ -83,7 +92,13 @@
             </a>
           </li>
           <li class="nav-item">
-            <a href="/debug" class="nav-link has-icon"><i class="fal fa-debug"></i>
+            <a href="<%=baseUrl%>/settings/sync" class="nav-link has-icon"><i class="fal fa-sync"></i></a>
+          </li>
+          <li class="nav-item">
+            <a href="<%=baseUrl%>/settings/cache" class="nav-link has-icon"><i class="fal fa-database"></i></a>
+          </li>
+          <li class="nav-item">
+            <a href="<%=baseUrl%>/debug" class="nav-link has-icon"><i class="fal fa-debug"></i>
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
               <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
               </svg>
@@ -687,6 +702,41 @@
                   <small id="plexTokenHelp" class="form-text text-muted">Plex: <a href="https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/"
                       target="_blank">X-Plex-Token</a>. Jellyfin/Emby: API key. Kodi: optional HTTP auth (<code>kodi:password</code> or just password, user defaults to <code>kodi</code>).</small>
                 </div>
+
+                  <div class="form-group mt-3">
+                    <label>Poster cache</label>
+                    <div class="form-group">
+                      <label for="posterCacheRefreshMins">Refresh poster DB &amp; images every (minutes)</label>
+                      <input type="number" class="form-control" style="max-width: 8rem;" name="posterCacheRefreshMins" id="posterCacheRefreshMins" min="0" step="1"
+                        value="<% if(typeof formData !== 'undefined' && errors && formData.posterCacheRefreshMins !== undefined){%><%=formData.posterCacheRefreshMins%><%}else{%><%=(settings.posterCacheRefreshMins != null ? settings.posterCacheRefreshMins : 0)%><%}%>">
+                      <small class="form-text text-muted">0 = disabled. Uses the same interval as the maximum age: on each run, entries older than this many minutes are checked—images with a saved server URL are re-downloaded; others are removed until the library serves them again. Timer runs at least every 5 minutes when enabled.</small>
+                    </div>
+                    <div class="form-group">
+                      <label for="posterCacheMinAgeBeforeChangeCheckMins">Minimum cache age before change checks (minutes)</label>
+                      <input type="number" class="form-control" style="max-width: 8rem;" name="posterCacheMinAgeBeforeChangeCheckMins" id="posterCacheMinAgeBeforeChangeCheckMins" min="0" step="1"
+                        value="<% if(typeof formData !== 'undefined' && errors && formData.posterCacheMinAgeBeforeChangeCheckMins !== undefined){%><%=formData.posterCacheMinAgeBeforeChangeCheckMins%><%}else{%><%=(settings.posterCacheMinAgeBeforeChangeCheckMins != null ? settings.posterCacheMinAgeBeforeChangeCheckMins : 0)%><%}%>">
+                      <small class="form-text text-muted">0 = no extra wait. Otherwise a poster row must be at least this many minutes old (since it was last registered or refreshed) before we probe the media server for deleted items or re-download the image. New rows are left alone until they reach this age.</small>
+                    </div>
+                    <div class="form-group">
+                      <div class="custom-control custom-control-nolabel custom-switch ml-auto">
+                        <input type="checkbox" class="custom-control-input" name="preferCachedPosters" id="preferCachedPosters" value="true"
+                          <% if(typeof formData !== 'undefined' && errors){%><%=(formData.preferCachedPosters == 'true') ? 'checked' : '' %><%}else{%><%=(settings.preferCachedPosters == 'true') ? 'checked' : '' %><%}%>>
+                        <label class="custom-control-label" for="preferCachedPosters">Prefer cached poster library</label>
+                      </div>
+                      <small class="form-text text-muted">When on (default), slideshow library slides come from the poster cache and metadata database. Plex/Jellyfin/Emby/Kodi on-demand is only used if the cache is empty, and still runs in the background to fill the cache. Now Playing slides are unchanged.</small>
+                    </div>
+                    <div class="form-group">
+                      <label for="cachedPosterSlideCount">Cached poster slide count</label>
+                      <input type="number" class="form-control" style="max-width: 10rem;" name="cachedPosterSlideCount" id="cachedPosterSlideCount" min="1" step="1"
+                        value="<% if(typeof formData !== 'undefined' && errors && formData.cachedPosterSlideCount !== undefined){%><%=formData.cachedPosterSlideCount%><%}else{%><%=(settings.cachedPosterSlideCount != null ? settings.cachedPosterSlideCount : 48)%><%}%>">
+                      <small class="form-text text-muted">How many random cached titles to include per refresh when “Prefer cached poster library” is enabled. There is no fixed upper limit; you cannot get more distinct slides than you have poster rows on disk.</small>
+                    </div>
+                    <p class="form-text text-muted mb-2">Clear removes all files in <code>saved/imagecache</code> and the poster metadata database (<code>saved/posterr-poster-metadata.db</code>). Sonarr/Radarr/Lidarr/Readarr cached art in that folder is removed too.</p>
+                    <button type="submit" class="btn btn-outline-warning btn-sm d-inline"
+                      formaction="<%=baseUrl%>/settings/clear-poster-cache"
+                      formmethod="post"
+                      onclick="return confirm('Clear all cached poster images and poster metadata? This cannot be undone.');">Clear poster cache &amp; metadata</button>
+                  </div>
                   
                 </div>
               </div>

@@ -96,7 +96,15 @@ const DEFAULT_SETTINGS = {
   awtrixIP: "",
   enableLinks: "false",
   links: "",
-  excludeLibs: ""
+  excludeLibs: "",
+  /** Minutes between poster DB/cache refresh checks; 0 = disabled. Stale entries re-download from stored URL or are dropped. */
+  posterCacheRefreshMins: 0,
+  /** Minimum minutes since a poster row was last updated before we check the media server for removal or re-download the image. 0 = no extra wait (only the refresh interval applies to image checks). */
+  posterCacheMinAgeBeforeChangeCheckMins: 0,
+  /** When true, slideshow library slides come from poster cache/DB first; live on-demand from the media server is only a backup and still fills the cache. */
+  preferCachedPosters: "true",
+  /** How many cached poster slides to build when preferCachedPosters is on (actual deck is at most entries in the poster DB). */
+  cachedPosterSlideCount: 48
 };
 
 module.exports = DEFAULT_SETTINGS;

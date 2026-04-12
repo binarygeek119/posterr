@@ -1,4 +1,5 @@
 const fs = require("fs");
+const path = require("path");
 const request = require("request");
 const fsExtra = require("fs-extra");
 const util = require("./utility");
@@ -18,10 +19,42 @@ class Cache {
    * @param {string} fileName - the filename to save the image file as
    * @returns nothing
    */
-  static async CacheImage(url, fileName) {
+  /**
+   * @param {object} [options] — e.g. `{ headers: { Authorization: "…" } }` for Jellyfin image endpoints
+   */
+  static async CacheImage(url, fileName, options) {
     const savePath = "./saved/imagecache/" + fileName;
-    const result = await this.download(url, savePath, fileName);
+    const result = await this.download(url, savePath, options);
     return result;
+  }
+
+  /**
+   * Re-download an image even if the file already exists (poster metadata refresh).
+   * @param {string} url
+   * @param {string} savePath absolute or relative path
+   */
+  static downloadImageForce(url, savePath, options) {
+    const headers = options && options.headers;
+    return new Promise((resolve, reject) => {
+      try {
+        if (fs.existsSync(savePath)) fs.unlinkSync(savePath);
+      } catch (e) {
+        /* ignore */
+      }
+      const ws = fs.createWriteStream(savePath, { autoClose: true });
+      const req = headers ? request({ url, headers }) : request(url);
+      req.on("error", (err) => {
+        try {
+          ws.destroy();
+        } catch (e) {
+          /* ignore */
+        }
+        reject(err);
+      });
+      req.pipe(ws);
+      ws.on("error", (err) => reject(err));
+      ws.on("finish", () => resolve(true));
+    });
   }
 
   /**
@@ -32,7 +65,7 @@ class Cache {
   static async CacheMP3(fileName) {
     const savePath = "./saved/mp3cache/" + fileName;
     const url = "http://tvthemes.plexapp.com/" + fileName;
-    const result = await this.download(url, savePath);
+    const result = await this.download(url, savePath, undefined);
     return result;
   }
 
@@ -45,7 +78,7 @@ class Cache {
   static async CachePlexMP3(url, fileName) {
     const savePath = "./saved/mp3cache/" + fileName;
     //console.log(fileName, url);
-    const result = await this.download(url, savePath);
+    const result = await this.download(url, savePath, undefined);
     return result;
   }
 
@@ -53,56 +86,54 @@ class Cache {
    * @desc Download any asset, providing it does not already exist in the save location
    * @param {string} url - the full url to the asset
    * @param {string} savePath - the path to save the asset to
-   * @param {string} fileName - the filename to save the asset as
-   * @returns nothing
+   * @param {object} [options] — optional `{ headers }` for authenticated image URLs
+   * @returns {Promise<boolean>}
    */
-  static async download(url, savePath) {
-    // download file function
-    let status=true;
-    const download = (url, savePath, callback) => {
-      // request.head(url, (err, res, body) => {
-      request(url, function (err, res, body) {
-        //console.log(res.rawHeaders[1]);
-        // check to see if no content, then if mp3, throw exception
-//         var size = parseInt(res.headers["content-length"], 10);
-// //        console.log("file size: " + size);
-//         if (isNaN(size) || (size < 250 && url.toLowerCase().includes("themes"))) {
-//           //console.log('no mp3',url);
-//           status=false;
-//           return callback;
-//         }
-      })
-        .pipe(fs.createWriteStream(savePath, { autoClose: true }))
-        .on("error", (err) => {
-          // throw error unless the download failed due to a restart
-          if (err.code !== "EPERM") {
-            console.log(
-              "download failed for: ",
-              url,
-              err.message,
-              err.code,
-              err.errno
-            );
-          }
-          status=false;
-          return callback(true);
-        })
-        .on("close", () => {
-          return callback;
-        });
-         return callback;
-    };
-
-    //
-    // check if file exists before downloading
-    if (!fs.existsSync(savePath)) {
-      //file not present, so download
-      download(url, savePath, function (dlRes) {
-        // console.log("✅ Downloaded: " + fileName);
-      });
-    } else {
-      // console.log("✘ " + fileName + " exists, DL aborted");
+  static download(url, savePath, options) {
+    if (fs.existsSync(savePath)) {
+      return Promise.resolve(true);
     }
+    try {
+      fs.mkdirSync(path.dirname(savePath), { recursive: true });
+    } catch (e) {
+      /* ignore */
+    }
+    const headers = options && options.headers;
+    return new Promise((resolve) => {
+      const ws = fs.createWriteStream(savePath, { autoClose: true });
+      const req = headers ? request({ url, headers }) : request(url);
+      req.on("error", (err) => {
+        try {
+          ws.destroy();
+        } catch (e) {
+          /* ignore */
+        }
+        if (err.code !== "EPERM") {
+          console.log(
+            "download failed for: ",
+            url,
+            err.message,
+            err.code,
+            err.errno
+          );
+        }
+        resolve(false);
+      });
+      req.pipe(ws);
+      ws.on("error", (err) => {
+        if (err.code !== "EPERM") {
+          console.log(
+            "download failed for: ",
+            url,
+            err.message,
+            err.code,
+            err.errno
+          );
+        }
+        resolve(false);
+      });
+      ws.on("finish", () => resolve(true));
+    });
   }
 
   // not implemented yet!

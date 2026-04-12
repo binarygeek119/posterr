@@ -4,6 +4,7 @@ const mediaCard = require("./../cards/MediaCard");
 const cType = require("./../cards/CardType");
 const util = require("./../core/utility");
 const core = require("./../core/cache");
+const posterSyncLib = require("./../core/posterSyncProgress");
 const { CardTypeEnum } = require("./../cards/CardType");
 const EmbyJellyfinBase = require("./embyJellyfinBase");
 
@@ -306,7 +307,10 @@ class Kodi {
         medCard.audioCodec = "";
         if (posterVfs) {
           const url = this.vfsImageUrl(posterVfs);
-          if (url) await core.CacheImage(url, posterFile);
+          if (url) {
+            medCard.posterDownloadURL = url;
+            await core.CacheImage(url, posterFile);
+          }
           medCard.posterURL = "/imagecache/" + posterFile;
         }
         if (hasArt === "true") {
@@ -323,6 +327,10 @@ class Kodi {
         }
         medCard.posterAR = 1;
       } else if (type === "episode") {
+        if (item.id != null) {
+          medCard.posterApiItemId = String(item.id);
+          medCard.posterLibraryKind = "episode";
+        }
         medCard.title = item.showtitle || "";
         medCard.episodeName = item.title || "";
         const sn = item.season != null ? item.season : "?";
@@ -341,7 +349,10 @@ class Kodi {
         medCard.cardType = cType.CardTypeEnum.NowScreening;
         if (posterVfs) {
           const url = this.vfsImageUrl(posterVfs);
-          if (url) await core.CacheImage(url, posterFile);
+          if (url) {
+            medCard.posterDownloadURL = url;
+            await core.CacheImage(url, posterFile);
+          }
           medCard.posterURL = "/imagecache/" + posterFile;
         }
         if (hasArt === "true") {
@@ -360,6 +371,10 @@ class Kodi {
         medCard.resCodec = "";
         medCard.audioCodec = "";
       } else if (type === "movie") {
+        if (item.id != null) {
+          medCard.posterApiItemId = String(item.id);
+          medCard.posterLibraryKind = "movie";
+        }
         medCard.title = item.title || item.label || "";
         medCard.tagLine = medCard.title;
         medCard.mediaType = "movie";
@@ -367,7 +382,10 @@ class Kodi {
         medCard.cardType = cType.CardTypeEnum.NowScreening;
         if (posterVfs) {
           const url = this.vfsImageUrl(posterVfs);
-          if (url) await core.CacheImage(url, posterFile);
+          if (url) {
+            medCard.posterDownloadURL = url;
+            await core.CacheImage(url, posterFile);
+          }
           medCard.posterURL = "/imagecache/" + posterFile;
         }
         if (hasArt === "true") {
@@ -589,18 +607,50 @@ class Kodi {
     return this.filterKodiItems(tagged, genres, recentlyAdded, contentRatings);
   }
 
-  async GetOnDemandRawData(onDemandLibraries, numberOnDemand, genres, recentlyAdded, contentRating) {
+  async GetOnDemandRawData(
+    onDemandLibraries,
+    numberOnDemand,
+    genres,
+    recentlyAdded,
+    contentRating,
+    fullLibraryForPosterSync,
+    syncProgress
+  ) {
     const odSet = [];
     try {
       const libEntries = await this.GetLibraryKeys(onDemandLibraries);
+      if (syncProgress) {
+        syncProgress.libraries = posterSyncLib.buildLibraryProgressRows(
+          onDemandLibraries,
+          libEntries,
+          (e) => e.label,
+          (e) => e.label
+        );
+      }
       for (const entry of libEntries) {
+        const row =
+          syncProgress &&
+          syncProgress.libraries &&
+          posterSyncLib.findLibraryRow(syncProgress.libraries, entry.label);
+        if (row && row.fetchStatus !== "skipped") {
+          row.fetchStatus = "loading";
+        }
         const result = await this.GetAllMediaForSource(
           entry,
           genres,
           recentlyAdded,
           contentRating
         );
-        const od = await util.build_random_od_set(numberOnDemand, result, recentlyAdded);
+        if (row && row.fetchStatus !== "skipped") {
+          row.fetchStatus = "done";
+          row.itemsFound = result.length;
+        }
+        const od = await util.build_random_od_set(
+          numberOnDemand,
+          result,
+          recentlyAdded,
+          fullLibraryForPosterSync ? { includeAll: true } : undefined
+        );
         for (const odc of od) {
           odc.ctype =
             recentlyAdded > 0 ? CardTypeEnum.RecentlyAdded : CardTypeEnum.OnDemand;
@@ -623,8 +673,19 @@ class Kodi {
     hasArt,
     genres,
     recentlyAdded,
-    contentRatings
+    contentRatings,
+    opts
   ) {
+    const posterSyncFull = opts && opts.posterSyncFullLibrary === true;
+    const sp = opts && opts.syncProgress;
+    if (posterSyncFull && sp) {
+      sp.phase = "fetching";
+      sp.label = "Fetching library from media server…";
+      sp.processed = 0;
+      sp.total = 0;
+    }
+    const effHasArt = posterSyncFull ? "true" : hasArt;
+
     let odCards = [];
     let odRaw;
     if (genres != undefined) {
@@ -645,13 +706,31 @@ class Kodi {
     }
 
     try {
-      if (recentlyAdded > 0) {
+      if (posterSyncFull) {
+        if (sp) {
+          const now = new Date();
+          console.log(
+            now.toLocaleString() +
+              " [poster sync] Kodi — fetching full library list…"
+          );
+        }
+        odRaw = await this.GetOnDemandRawData(
+          onDemandLibraries,
+          numberOnDemand,
+          genres,
+          0,
+          contentRatings,
+          true,
+          sp
+        );
+      } else if (recentlyAdded > 0) {
         odRaw = await this.GetOnDemandRawData(
           onDemandLibraries,
           numberOnDemand,
           genres,
           recentlyAdded,
-          contentRatings
+          contentRatings,
+          false
         );
         if (odRaw !== undefined) {
           odRaw = odRaw.concat(
@@ -660,7 +739,8 @@ class Kodi {
               numberOnDemand,
               genres,
               0,
-              contentRatings
+              contentRatings,
+              false
             )
           );
         } else {
@@ -669,7 +749,8 @@ class Kodi {
             numberOnDemand,
             genres,
             0,
-            contentRatings
+            contentRatings,
+            false
           );
         }
       } else {
@@ -678,7 +759,8 @@ class Kodi {
           numberOnDemand,
           genres,
           0,
-          contentRatings
+          contentRatings,
+          false
         );
       }
     } catch (err) {
@@ -692,6 +774,20 @@ class Kodi {
     }
 
     if (!odRaw || odRaw.length === 0) {
+      if (posterSyncFull && sp) {
+        sp.total = 0;
+        sp.processed = 0;
+        sp.phase = "complete";
+        sp.label = "No titles to sync";
+        if (sp.libraries) {
+          for (const row of sp.libraries) {
+            row.cacheTotal = 0;
+            row.itemsCached = 0;
+            row.cacheStatus =
+              row.fetchStatus === "skipped" ? "skipped" : "done";
+          }
+        }
+      }
       const now = new Date();
       if (onDemandLibraries && String(onDemandLibraries).trim()) {
         console.log(
@@ -702,8 +798,36 @@ class Kodi {
       return odCards;
     }
 
+    if (posterSyncFull && sp) {
+      sp.total = odRaw.length;
+      sp.phase = "caching";
+      sp.label = "Caching posters and images…";
+      const counts = posterSyncLib.countItemsByLibraryFields(odRaw, [
+        "_kodiLabel",
+      ]);
+      for (const row of sp.libraries || []) {
+        row.cacheTotal = counts[row.name] || 0;
+        row.itemsCached = 0;
+        if (row.fetchStatus === "skipped") {
+          row.cacheStatus = "skipped";
+        } else {
+          row.cacheStatus = row.cacheTotal > 0 ? "pending" : "done";
+        }
+      }
+      const now = new Date();
+      console.log(
+        now.toLocaleString() +
+          " [poster sync] Kodi — " +
+          odRaw.length +
+          " item(s) to download (" +
+          onDemandLibraries +
+          ")"
+      );
+    }
+
     for (const md of odRaw) {
       const medCard = new mediaCard();
+      medCard.posterLibraryLabel = String(md._kodiLabel || "").trim();
       const kind = md._kodiKind;
 
       if (kind === "show") {
@@ -723,10 +847,13 @@ class Kodi {
         const fileName = `kodi-show-${mediaId}.jpg`;
         if (posterVfs) {
           const url = this.vfsImageUrl(posterVfs);
-          if (url) await core.CacheImage(url, fileName);
+          if (url) {
+            medCard.posterDownloadURL = url;
+            await core.CacheImage(url, fileName);
+          }
           medCard.posterURL = "/imagecache/" + fileName;
         }
-        if (hasArt === "true") {
+        if (effHasArt === "true") {
           const fan = this.fanartFromItem(md);
           if (fan) {
             const artName = `kodi-show-${mediaId}-art.jpg`;
@@ -749,10 +876,13 @@ class Kodi {
         const posterVfs = this.posterFromItem(md);
         if (posterVfs) {
           const url = this.vfsImageUrl(posterVfs);
-          if (url) await core.CacheImage(url, movieFileName);
+          if (url) {
+            medCard.posterDownloadURL = url;
+            await core.CacheImage(url, movieFileName);
+          }
           medCard.posterURL = "/imagecache/" + movieFileName;
         }
-        if (hasArt === "true") {
+        if (effHasArt === "true") {
           const fan = this.fanartFromItem(md);
           if (fan) {
             const artName = movieFileName.replace(/\.jpg$/, "-art.jpg");
@@ -803,12 +933,66 @@ class Kodi {
       medCard.summary = md.plot || "";
       medCard.cardType = md.ctype;
 
+      if (kind === "show" && md.tvshowid != null) {
+        medCard.posterApiItemId = String(md.tvshowid);
+        medCard.posterLibraryKind = "show";
+      } else if (kind === "movie" && md.movieid != null) {
+        medCard.posterApiItemId = String(md.movieid);
+        medCard.posterLibraryKind = "movie";
+      }
+
       odCards.push(medCard);
+      if (sp) {
+        sp.processed = odCards.length;
+      }
+      if (posterSyncFull && sp && sp.libraries) {
+        const lr = posterSyncLib.findLibraryRow(
+          sp.libraries,
+          medCard.posterLibraryLabel
+        );
+        if (lr && lr.cacheStatus !== "skipped") {
+          lr.cacheStatus = "running";
+          lr.itemsCached = (lr.itemsCached || 0) + 1;
+          if (lr.cacheTotal > 0 && lr.itemsCached >= lr.cacheTotal) {
+            lr.cacheStatus = "done";
+          }
+        }
+      }
+      if (posterSyncFull && sp) {
+        const n = odCards.length;
+        const total = sp.total || odRaw.length;
+        const step = Math.max(25, Math.min(500, Math.floor(total / 15) || 1));
+        if (n === 1 || n >= total || n % step === 0) {
+          const t = medCard.mediaType || kind || "?";
+          const title = String(medCard.title || "").slice(0, 72);
+          console.log(
+            new Date().toLocaleString() +
+              " [poster sync] " +
+              n +
+              "/" +
+              total +
+              " " +
+              t +
+              ' — "' +
+              title +
+              '"'
+          );
+        }
+      }
     }
 
     const now = new Date();
     if (odCards.length === 0) {
       console.log(now.toLocaleString() + " No On-demand titles available");
+    } else if (posterSyncFull) {
+      console.log(
+        now.toLocaleString() +
+          " [poster sync] Kodi — finished caching " +
+          odCards.length +
+          " item(s) from (" +
+          onDemandLibraries +
+          ")"
+      );
     } else {
       console.log(
         now.toLocaleString() + " On-demand titles refreshed (" + onDemandLibraries + ")"
@@ -847,6 +1031,45 @@ class Kodi {
       titles: titles.slice(0, limit),
       totalLibraries: sources.length,
     };
+  }
+
+  /**
+   * True if a cached poster row's Kodi library item no longer exists.
+   * @param {{ apiItemId?: string, libraryKind?: string, sourceUrl?: string }} entry
+   */
+  async posterMetadataEntryGone(entry) {
+    const { probeImageUrlGone } = require("../core/posterMetadataProbe");
+    const kind = String(entry.libraryKind || "").toLowerCase();
+    const idRaw = String(entry.apiItemId || "").trim();
+    const numId = parseInt(idRaw, 10);
+    if (idRaw && !isNaN(numId) && numId > 0) {
+      try {
+        if (kind === "show") {
+          const r = await this.rpc("VideoLibrary.GetTVShowDetails", {
+            tvshowid: numId,
+            properties: ["title"],
+          });
+          return !r || !r.tvshowdetails;
+        }
+        if (kind === "episode") {
+          const r = await this.rpc("VideoLibrary.GetEpisodeDetails", {
+            episodeid: numId,
+            properties: ["title"],
+          });
+          return !r || !r.episodedetails;
+        }
+        if (kind === "movie") {
+          const r = await this.rpc("VideoLibrary.GetMovieDetails", {
+            movieid: numId,
+            properties: ["title"],
+          });
+          return !r || !r.moviedetails;
+        }
+      } catch (e) {
+        return true;
+      }
+    }
+    return probeImageUrlGone(entry.sourceUrl);
   }
 }
 

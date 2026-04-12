@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Cache-control" content="public">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <script src="https://code.jquery.com/jquery-3.4.1.slim.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" crossorigin="anonymous"></script>
+  <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.4.1/css/bootstrap.min.css" rel="stylesheet"/>
+  <link rel="stylesheet" href="<%=baseUrl%>/css/settings-styles.css">
+  <link rel="stylesheet" href="<%=baseUrl%>/css/light.min.css">
+  <link rel="stylesheet" href="<%=baseUrl%>/css/font-awesome.min.css">
+  <title>Posterr — Cache</title>
+  <link rel="shortcut icon" type="image/png" href="<%=baseUrl%>/favicons/favicon.ico" />
+  <style>
+    .cache-chart-wrap { position: relative; height: 280px; max-width: 100%; }
+    .cache-chart-wrap.tall { height: 360px; }
+    @media (min-width: 768px) {
+      .cache-chart-wrap.wide { height: 320px; }
+    }
+  </style>
+</head>
+<body>
+  <%if(!user.valid){%><script language='javascript'>
+    window.location.href = '<%=baseUrl%>/logon';
+  </script><%}%>
+  <div class="container">
+    <nav aria-label="breadcrumb" class="main-breadcrumb">
+      <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="<%=baseUrl%>/">Posterr</a></li>
+        <li class="breadcrumb-item"><a href="<%=baseUrl%>/settings">Settings</a></li>
+        <li class="breadcrumb-item active" aria-current="page">Cache</li>
+      </ol>
+    </nav>
+
+    <div class="row gutters-sm">
+      <div class="col-md-4 d-none d-md-block">
+        <div class="card">
+          <div class="card-body">
+            <nav class="nav flex-column nav-pills nav-gap-y-1">
+              <a href="<%=baseUrl%>/settings" class="nav-item nav-link has-icon nav-link-faded">
+                <i class="fal fa-cog"></i><span class="menu">Settings</span>
+              </a>
+              <a href="<%=baseUrl%>/settings/sync" class="nav-item nav-link has-icon nav-link-faded">
+                <i class="fal fa-sync"></i><span class="menu">Sync</span>
+              </a>
+              <a href="<%=baseUrl%>/settings/cache" class="nav-item nav-link has-icon nav-link-faded active">
+                <i class="fal fa-database"></i><span class="menu">Cache</span>
+              </a>
+              <a href="<%=baseUrl%>/debug" class="nav-item nav-link has-icon nav-link-faded">
+                <i class="fal fa-debug"></i><span class="menu">Debug</span>
+              </a>
+              <a href="<%=baseUrl%>/settings#about" class="nav-item nav-link has-icon nav-link-faded">
+                <i class="fal fa-person-sign"></i><span class="menu">About</span>
+              </a>
+            </nav>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-8">
+        <div class="card">
+          <div class="card-header border-bottom mb-3 d-flex d-md-none">
+            <ul class="nav nav-tabs card-header-tabs nav-gap-x-1" role="tablist">
+              <li class="nav-item"><a href="<%=baseUrl%>/settings" class="nav-link has-icon"><i class="fal fa-cog"></i></a></li>
+              <li class="nav-item"><a href="<%=baseUrl%>/settings/sync" class="nav-link has-icon"><i class="fal fa-sync"></i></a></li>
+              <li class="nav-item"><a href="<%=baseUrl%>/settings/cache" class="nav-link has-icon active"><i class="fal fa-database"></i></a></li>
+              <li class="nav-item"><a href="<%=baseUrl%>/debug" class="nav-link has-icon"><i class="fal fa-debug"></i></a></li>
+              <li class="nav-item"><a href="<%=baseUrl%>/settings#about" class="nav-link has-icon"><i class="fal fa-person-sign"></i></a></li>
+            </ul>
+          </div>
+          <div class="card-body">
+            <div class="d-flex flex-wrap align-items-center justify-content-between mb-3">
+              <h4 class="mb-0">Poster &amp; media cache</h4>
+              <button type="button" class="btn btn-outline-secondary btn-sm" id="cacheRefreshBtn">Refresh</button>
+            </div>
+            <p class="text-muted small">Counts reflect <code>saved/imagecache</code>, <code>saved/mp3cache</code>, and <code>posterr-poster-metadata.db</code> (SQLite poster index). Library names appear after a sync or on-demand refresh that includes them. Fanart and cast images are matched to a library when they share a base name with a registered poster.</p>
+
+            <div id="cacheLoadError" class="alert alert-danger d-none" role="alert"></div>
+
+            <div class="row text-center mb-4" id="cacheSummary">
+              <div class="col-6 col-md-3 mb-2">
+                <div class="border rounded py-2 px-1 bg-light">
+                  <div class="small text-muted">Poster DB rows</div>
+                  <div class="h5 mb-0" id="sumRows">—</div>
+                </div>
+              </div>
+              <div class="col-6 col-md-3 mb-2">
+                <div class="border rounded py-2 px-1 bg-light">
+                  <div class="small text-muted">Valid poster files</div>
+                  <div class="h5 mb-0" id="sumValid">—</div>
+                </div>
+              </div>
+              <div class="col-6 col-md-3 mb-2">
+                <div class="border rounded py-2 px-1 bg-light">
+                  <div class="small text-muted">Images on disk</div>
+                  <div class="h5 mb-0" id="sumImg">—</div>
+                </div>
+              </div>
+              <div class="col-6 col-md-3 mb-2">
+                <div class="border rounded py-2 px-1 bg-light">
+                  <div class="small text-muted">Theme MP3s</div>
+                  <div class="h5 mb-0" id="sumMp3">—</div>
+                </div>
+              </div>
+            </div>
+            <p class="small text-muted mb-4" id="cacheGenerated"></p>
+
+            <div class="row">
+              <div class="col-lg-6 mb-4">
+                <h6 class="text-muted text-uppercase small">Image files by type</h6>
+                <div class="cache-chart-wrap"><canvas id="chartByCategory"></canvas></div>
+              </div>
+              <div class="col-lg-6 mb-4">
+                <h6 class="text-muted text-uppercase small">Registered posters by media type</h6>
+                <div class="cache-chart-wrap"><canvas id="chartMediaType"></canvas></div>
+              </div>
+            </div>
+
+            <h6 class="text-muted text-uppercase small mb-2">By library — image files (stacked)</h6>
+            <p class="small text-muted">Primary = main poster; fanart = <code>*-art.jpg</code>; portrait = cast/director/artist thumbs; other = remaining cached images.</p>
+            <div class="cache-chart-wrap wide tall mb-4"><canvas id="chartByLibrary"></canvas></div>
+
+            <h6 class="text-muted text-uppercase small mb-2">Poster database by library</h6>
+            <div class="table-responsive">
+              <table class="table table-sm table-striped" id="posterDbTable">
+                <thead><tr><th>Library</th><th>Valid</th><th>Missing file</th><th>Media types</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var statsUrl = <%- JSON.stringify(baseUrl + "/settings/cache/stats") %>;
+      var charts = { cat: null, media: null, lib: null };
+
+      function fmtBytes(n) {
+        if (n == null || isNaN(n)) return "0 B";
+        var u = ["B", "KB", "MB", "GB"];
+        var i = 0;
+        while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+        return (i === 0 ? n : n.toFixed(1)) + " " + u[i];
+      }
+
+      function destroyChart(key) {
+        if (charts[key]) {
+          charts[key].destroy();
+          charts[key] = null;
+        }
+      }
+
+      function renderCharts(data) {
+        var ic = data.imagecache && data.imagecache.byCategory ? data.imagecache.byCategory : {};
+        var labelsCat = ["Primary poster", "Fanart", "Portrait", "Other"];
+        var dataCat = [
+          ic.primary || 0,
+          ic.fanart || 0,
+          ic.portrait || 0,
+          ic.other || 0
+        ];
+        var colorsCat = ["#0d6efd", "#6610f2", "#fd7e14", "#6c757d"];
+
+        destroyChart("cat");
+        charts.cat = new Chart(document.getElementById("chartByCategory"), {
+          type: "doughnut",
+          data: {
+            labels: labelsCat,
+            datasets: [{ data: dataCat, backgroundColor: colorsCat, borderWidth: 1 }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: "bottom" } }
+          }
+        });
+
+        var mediaAgg = {};
+        (data.posterDb && data.posterDb.byLibrary || []).forEach(function (row) {
+          Object.keys(row.byMediaType || {}).forEach(function (k) {
+            mediaAgg[k] = (mediaAgg[k] || 0) + row.byMediaType[k];
+          });
+        });
+        var mk = Object.keys(mediaAgg).sort();
+        destroyChart("media");
+        charts.media = new Chart(document.getElementById("chartMediaType"), {
+          type: "pie",
+          data: {
+            labels: mk.length ? mk : ["(none)"],
+            datasets: [{
+              data: mk.length ? mk.map(function (k) { return mediaAgg[k]; }) : [1],
+              backgroundColor: ["#0d6efd", "#198754", "#ffc107", "#dc3545", "#20c997", "#6f42c1", "#adb5bd"]
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: "bottom" } }
+          }
+        });
+
+        var libs = (data.imagecache && data.imagecache.byLibrary) || [];
+        var libLabels = libs.map(function (r) { return r.name; });
+        destroyChart("lib");
+        charts.lib = new Chart(document.getElementById("chartByLibrary"), {
+          type: "bar",
+          data: {
+            labels: libLabels.length ? libLabels : ["(no data)"],
+            datasets: [
+              { label: "Primary", data: libLabels.length ? libs.map(function (r) { return r.primary; }) : [0], backgroundColor: "#0d6efd" },
+              { label: "Fanart", data: libLabels.length ? libs.map(function (r) { return r.fanart; }) : [0], backgroundColor: "#6610f2" },
+              { label: "Portrait", data: libLabels.length ? libs.map(function (r) { return r.portrait; }) : [0], backgroundColor: "#fd7e14" },
+              { label: "Other", data: libLabels.length ? libs.map(function (r) { return r.other; }) : [0], backgroundColor: "#6c757d" }
+            ]
+          },
+          options: {
+            indexAxis: "y",
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: { stacked: true, beginAtZero: true, ticks: { precision: 0 } },
+              y: { stacked: true }
+            },
+            plugins: { legend: { position: "bottom" } }
+          }
+        });
+      }
+
+      function fillTable(data) {
+        var tb = document.querySelector("#posterDbTable tbody");
+        tb.innerHTML = "";
+        var rows = (data.posterDb && data.posterDb.byLibrary) || [];
+        if (!rows.length) {
+          var tr = document.createElement("tr");
+          tr.innerHTML = "<td colspan=\"4\" class=\"text-muted\">No poster metadata rows yet. Run a library sync from the Sync page.</td>";
+          tb.appendChild(tr);
+          return;
+        }
+        rows.forEach(function (r) {
+          var parts = Object.keys(r.byMediaType || {}).map(function (k) {
+            return k + ": " + r.byMediaType[k];
+          }).join(", ") || "—";
+          var tr = document.createElement("tr");
+          tr.innerHTML = "<td>" + escapeHtml(r.name) + "</td><td>" + r.valid + "</td><td>" + r.missingFile + "</td><td>" + escapeHtml(parts) + "</td>";
+          tb.appendChild(tr);
+        });
+      }
+
+      function escapeHtml(s) {
+        var d = document.createElement("div");
+        d.textContent = s;
+        return d.innerHTML;
+      }
+
+      function loadStats() {
+        document.getElementById("cacheLoadError").classList.add("d-none");
+        fetch(statsUrl, { credentials: "same-origin" })
+          .then(function (r) {
+            if (r.status === 401) throw new Error("Session expired — open Settings and sign in again.");
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            return r.json();
+          })
+          .then(function (data) {
+            var pdb = data.posterDb || {};
+            var ic = data.imagecache || {};
+            var m3 = data.mp3cache || {};
+            document.getElementById("sumRows").textContent = pdb.rowCount != null ? pdb.rowCount : "0";
+            document.getElementById("sumValid").textContent = pdb.rowsWithValidFile != null ? pdb.rowsWithValidFile : "0";
+            document.getElementById("sumImg").textContent = (ic.fileCount != null ? ic.fileCount : "0") + " (" + fmtBytes(ic.totalBytes) + ")";
+            document.getElementById("sumMp3").textContent = (m3.fileCount != null ? m3.fileCount : "0") + " (" + fmtBytes(m3.totalBytes) + ")";
+            document.getElementById("cacheGenerated").textContent = data.generatedAt
+              ? "Snapshot: " + new Date(data.generatedAt).toLocaleString()
+              : "";
+            renderCharts(data);
+            fillTable(data);
+          })
+          .catch(function (e) {
+            document.getElementById("cacheLoadError").textContent = e.message || String(e);
+            document.getElementById("cacheLoadError").classList.remove("d-none");
+          });
+      }
+
+      document.getElementById("cacheRefreshBtn").addEventListener("click", loadStats);
+      loadStats();
+    })();
+  </script>
+</body>
+</html>

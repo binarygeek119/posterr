@@ -119,7 +119,15 @@ class utility {
    * @param {object} mediaCards - an array of on-demand mediaCards
    * @returns {Promise<object>} mediaCard[] - an array of mediaCards
    */
-  static async build_random_od_set(numberOnDemand, mediaCards, recentlyAdded) {
+  static async build_random_od_set(
+    numberOnDemand,
+    mediaCards,
+    recentlyAdded,
+    options
+  ) {
+    if (options && options.includeAll === true) {
+      return Array.isArray(mediaCards) ? mediaCards.slice() : [];
+    }
     let onDemandCards = [];
     let libTooSmall = false;
     if(recentlyAdded > 0) {
