@@ -106,6 +106,22 @@ services:
       - "host.docker.internal:host-gateway"
 ```
 
+#### Docker: mount `config` so settings **and** cache survive restarts
+
+The **`config`** volume is required not only for **`settings.json`**, but also for everything under **`config/cache/`** on the container:
+
+| Path (inside container) | Purpose |
+|-------------------------|---------|
+| `config/settings.json` | Posterr settings |
+| `config/cache/posterr-poster-metadata.db` | Poster / library sync metadata (SQLite) |
+| `config/cache/imagecache/` | Downloaded posters, fan art, and related images |
+| `config/cache/mp3cache/` | Cached TV/movie theme MP3s |
+| `config/cache/randomthemes/` | Optional random theme storage |
+
+Mount **one host folder** to **`/usr/src/app/config`** (as in the Compose example). Posterr creates `cache/` and subfolders on first use. If this path is not persisted on the host, **settings, poster sync, and cached artwork are lost** when the container is recreated.
+
+**Older setups** used a separate **`saved`** volume. That layout is deprecated: on the host directory you mount as **`config`**, create **`cache/`** and move in the old **`saved/imagecache`**, **`saved/mp3cache`**, and **`saved/posterr-poster-metadata.db`** (so inside the container they appear as **`config/cache/...`**).
+
 #### Media servers (Plex, Jellyfin, Emby, Kodi) in Docker
 Posterr only needs **outbound HTTP(S)** to your server — no extra packages in the image.
 
@@ -146,7 +162,7 @@ On **Docker Engine 20.10+**, `--add-host=host.docker.internal:host-gateway` lets
 |Option|Details|
 |--|--|
 |TZ|Your local timezone. Go to [wikipedia](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) and use the `TZ Database Name` value.|
-|/docker/posterr/config|This is required to save your Posterr settings|
+|/docker/posterr/config → `/usr/src/app/config`|**Required.** Holds `settings.json` **and** the **`cache/`** subtree (poster SQLite DB, `imagecache/`, `mp3cache/`). Use a persistent host directory so nothing is lost on container recreate.|
 |/docker/posterr/custom|This is required for custom pictures (and other custom media in the future)|
 |Ports|Change first part to a different port if needed. e.g. 9876:3000|
 |BASEPATH|_"/path"_ Use this for reverse proxy setups which require a base path value. **This line can be left out, or value left blank** if you dont use alternate paths. |
