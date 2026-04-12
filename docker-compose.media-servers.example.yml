@@ -4,7 +4,7 @@
 #
 # If you use this file without docker-compose.yml, add volume mounts for Posterr:
 #   config → /usr/src/app/config
-#   saved  → /usr/src/app/saved   (poster metadata + imagecache; needed for full library sync)
+#   config → /usr/src/app/config   (includes cache/: poster DB, imagecache, mp3cache)
 #
 # Posterr settings:
 #   Server type: Jellyfin

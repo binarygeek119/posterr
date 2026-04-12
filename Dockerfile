@@ -12,7 +12,7 @@ ENV NODE_ENV=production
 #
 # Persist these on the host (see docker-compose.yml):
 #   /usr/src/app/config  — settings
-#   /usr/src/app/saved   — poster DB (posterr-poster-metadata.db), imagecache, mp3cache
+#   /usr/src/app/config  — settings + cache/ (poster DB, imagecache, mp3cache)
 
 WORKDIR /usr/src/app
 COPY ["package.json", "package-lock.json*", "npm-shrinkwrap.json*", "./"]
@@ -20,7 +20,7 @@ RUN npm install --production --silent && mv node_modules ../
 
 COPY . .
 
-RUN mkdir -p config saved/imagecache saved/mp3cache saved/randomthemes public/custom/pictures
+RUN mkdir -p config/cache/imagecache config/cache/mp3cache config/cache/randomthemes public/custom/pictures
 
 EXPOSE 3000
 HEALTHCHECK --interval=10s --timeout=5s --retries=3 --start-period=15s CMD node healthcheck.js > /dev/null || exit 1

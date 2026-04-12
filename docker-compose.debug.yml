@@ -1,5 +1,5 @@
 # Debug compose — same host-gateway helper as docker-compose.yml for media servers on the host.
-# Bind-mount config + saved like production so poster sync and settings survive container rebuilds.
+# Bind-mount config (includes cache/) like production so poster sync and settings survive container rebuilds.
 
 version: "3.8"
 
@@ -18,7 +18,6 @@ services:
       - 9229:9229
     volumes:
       - ./docker-data/config:/usr/src/app/config
-      - ./docker-data/saved:/usr/src/app/saved
       - ./docker-data/custom:/usr/src/app/public/custom
     command: ["node", "--inspect=0.0.0.0:9229", "index.js"]
     extra_hosts:

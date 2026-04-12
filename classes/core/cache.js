@@ -3,6 +3,7 @@ const path = require("path");
 const request = require("request");
 const fsExtra = require("fs-extra");
 const util = require("./utility");
+const { IMAGE_CACHE_DIR, MP3_CACHE_DIR } = require("./appPaths");
 
 /**
  * @desc Cache class manages the downloaad, cleanup and random selection of mp3 and poster image assets. Methods are static.
@@ -23,7 +24,7 @@ class Cache {
    * @param {object} [options] — e.g. `{ headers: { Authorization: "…" } }` for Jellyfin image endpoints
    */
   static async CacheImage(url, fileName, options) {
-    const savePath = "./saved/imagecache/" + fileName;
+    const savePath = path.join(IMAGE_CACHE_DIR, fileName);
     const result = await this.download(url, savePath, options);
     return result;
   }
@@ -63,7 +64,7 @@ class Cache {
    * @returns nothing
    */
   static async CacheMP3(fileName) {
-    const savePath = "./saved/mp3cache/" + fileName;
+    const savePath = path.join(MP3_CACHE_DIR, fileName);
     const url = "http://tvthemes.plexapp.com/" + fileName;
     const result = await this.download(url, savePath, undefined);
     return result;
@@ -76,7 +77,7 @@ class Cache {
    * @returns nothing
    */
   static async CachePlexMP3(url, fileName) {
-    const savePath = "./saved/mp3cache/" + fileName;
+    const savePath = path.join(MP3_CACHE_DIR, fileName);
     //console.log(fileName, url);
     const result = await this.download(url, savePath, undefined);
     return result;
@@ -153,7 +154,7 @@ class Cache {
    * @returns nothing
    */
   static async DeleteMP3Cache() {
-    const directory = "./saved/mp3cache/";
+    const directory = MP3_CACHE_DIR;
     try {
       fsExtra.emptyDirSync(directory);
     } catch (err) {
@@ -170,7 +171,7 @@ class Cache {
    * @returns nothing
    */
   static async DeleteImageCache() {
-    const directory = "./saved/imagecache/";
+    const directory = IMAGE_CACHE_DIR;
     try {
       fsExtra.emptyDirSync(directory);
     } catch (err) {
@@ -189,7 +190,7 @@ class Cache {
   //  * @returns {string} fileName - a random filename
   //  */
   // static async GetRandomMP3(cardArray) {
-  //   let directory = "./saved/randomthemes";
+  //   let directory = require("./appPaths").RANDOM_THEMES_DIR;
   //   // get all mp3 files from directory
   //   let fileArr = fs.readdirSync(directory);
   //   let mp3Files = fileArr.filter(function (elm) {

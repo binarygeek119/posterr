@@ -731,7 +731,7 @@
                         value="<% if(typeof formData !== 'undefined' && errors && formData.cachedPosterSlideCount !== undefined){%><%=formData.cachedPosterSlideCount%><%}else{%><%=(settings.cachedPosterSlideCount != null ? settings.cachedPosterSlideCount : 48)%><%}%>">
                       <small class="form-text text-muted">How many random cached titles to include per refresh when “Prefer cached poster library” is enabled. There is no fixed upper limit; you cannot get more distinct slides than you have poster rows on disk.</small>
                     </div>
-                    <p class="form-text text-muted mb-2">Clear removes all files in <code>saved/imagecache</code> and the poster metadata database (<code>saved/posterr-poster-metadata.db</code>). Sonarr/Radarr/Lidarr/Readarr cached art in that folder is removed too.</p>
+                    <p class="form-text text-muted mb-2">Clear removes all files in <code>config/cache/imagecache</code> and the poster metadata database (<code>config/cache/posterr-poster-metadata.db</code>). Sonarr/Radarr/Lidarr/Readarr cached art in that folder is removed too.</p>
                     <button type="submit" class="btn btn-outline-warning btn-sm d-inline"
                       formaction="<%=baseUrl%>/settings/clear-poster-cache"
                       formmethod="post"

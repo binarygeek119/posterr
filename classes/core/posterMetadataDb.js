@@ -3,14 +3,16 @@ const path = require("path");
 const Cache = require("./cache");
 const MediaCard = require("../cards/MediaCard");
 const CardType = require("../cards/CardType");
+const { CACHE_ROOT, LEGACY_SAVED_ROOT } = require("./appPaths");
 
-const SAVED = path.join(process.cwd(), "saved");
 /** SQLite poster metadata (replaces legacy JSON). */
-const SQLITE_DB = path.join(SAVED, "posterr-poster-metadata.db");
-/** Legacy file; migrated once into SQLite then renamed. */
-const LEGACY_JSON = path.join(SAVED, "posterr-poster-metadata.json");
-const IMAGECACHE = path.join(SAVED, "imagecache");
-const MP3CACHE = path.join(SAVED, "mp3cache");
+const SQLITE_DB = path.join(CACHE_ROOT, "posterr-poster-metadata.db");
+/** Legacy JSON under former saved/; migrated once into SQLite then renamed. */
+const LEGACY_JSON = path.join(LEGACY_SAVED_ROOT, "posterr-poster-metadata.json");
+/** Legacy SQLite under former saved/; migrated into config/cache on first start. */
+const LEGACY_SQLITE = path.join(LEGACY_SAVED_ROOT, "posterr-poster-metadata.db");
+const IMAGECACHE = path.join(CACHE_ROOT, "imagecache");
+const MP3CACHE = path.join(CACHE_ROOT, "mp3cache");
 /** Upper bound on poster metadata rows (full-library sync can exceed the old 2500 cap). */
 const MAX_ENTRIES = 100000;
 const MIN_FILE_BYTES = 256;
@@ -51,7 +53,7 @@ function assertDb() {
 
 function persistDb() {
   assertDb();
-  fs.mkdirSync(SAVED, { recursive: true });
+  fs.mkdirSync(CACHE_ROOT, { recursive: true });
   const data = _sqlDb.export();
   fs.writeFileSync(SQLITE_DB, Buffer.from(data));
 }
@@ -69,22 +71,27 @@ async function initPosterMetadataDb() {
     "sql-wasm.wasm"
   );
   const SQL = await initSqlJs({ locateFile: () => wasmPath });
-  fs.mkdirSync(SAVED, { recursive: true });
+  fs.mkdirSync(CACHE_ROOT, { recursive: true });
 
-  const hadSqliteFile = fs.existsSync(SQLITE_DB);
-  if (hadSqliteFile) {
-    const buf = fs.readFileSync(SQLITE_DB);
-    _sqlDb = new SQL.Database(buf);
+  const hadNewSqlite = fs.existsSync(SQLITE_DB);
+  let loadedFromLegacySqlite = false;
+  if (hadNewSqlite) {
+    _sqlDb = new SQL.Database(fs.readFileSync(SQLITE_DB));
+  } else if (fs.existsSync(LEGACY_SQLITE)) {
+    _sqlDb = new SQL.Database(fs.readFileSync(LEGACY_SQLITE));
+    loadedFromLegacySqlite = true;
   } else {
     _sqlDb = new SQL.Database();
   }
   _sqlDb.exec(SCHEMA_SQL);
 
-  const cnt = countRows();
-  if (cnt === 0 && fs.existsSync(LEGACY_JSON)) {
+  let migratedJson = false;
+  const cntAfterOpen = countRows();
+  if (cntAfterOpen === 0 && fs.existsSync(LEGACY_JSON)) {
     try {
       migrateLegacyJson();
       persistDb();
+      migratedJson = true;
       const bak = LEGACY_JSON + ".migrated.bak";
       try {
         if (fs.existsSync(bak)) fs.unlinkSync(bak);
@@ -107,8 +114,51 @@ async function initPosterMetadataDb() {
           (e && e.message ? e.message : e)
       );
     }
-  } else if (!hadSqliteFile) {
+  }
+
+  if (loadedFromLegacySqlite) {
     persistDb();
+    try {
+      const lbak = LEGACY_SQLITE + ".migrated.bak";
+      if (fs.existsSync(lbak)) fs.unlinkSync(lbak);
+      fs.renameSync(LEGACY_SQLITE, lbak);
+      console.log(
+        new Date().toLocaleString() +
+          " Poster metadata: migrated SQLite DB from saved/ → " +
+          SQLITE_DB +
+          "; backup at " +
+          lbak
+      );
+    } catch (e) {
+      console.log(
+        new Date().toLocaleString() +
+          " Poster metadata: could not remove legacy saved/*.db — " +
+          (e && e.message ? e.message : e)
+      );
+    }
+  } else if (!hadNewSqlite && !migratedJson) {
+    persistDb();
+  }
+
+  logLegacySavedImageHint();
+}
+
+/** One-time hint if old saved/imagecache has JPEGs but config/cache/imagecache is empty. */
+function logLegacySavedImageHint() {
+  try {
+    const oldImg = path.join(LEGACY_SAVED_ROOT, "imagecache");
+    if (!fs.existsSync(oldImg)) return;
+    const j = fs.readdirSync(oldImg).filter((f) => /\.(jpe?g)$/i.test(f));
+    if (j.length === 0) return;
+    if (!fs.existsSync(IMAGECACHE)) return;
+    const n = fs.readdirSync(IMAGECACHE).length;
+    if (n > 0) return;
+    console.log(
+      new Date().toLocaleString() +
+        " Posterr: cached images are still under saved/imagecache; move files to config/cache/imagecache (and mp3cache → config/cache/mp3cache), or copy your old saved/ tree into config/cache/."
+    );
+  } catch (e) {
+    /* ignore */
   }
 }
 
@@ -612,7 +662,7 @@ function buildFallbackMediaCards(count, serverKind) {
 }
 
 /**
- * Remove all files in saved/imagecache and reset poster metadata DB (used from settings).
+ * Remove all files in config/cache/imagecache and reset poster metadata DB (used from settings).
  */
 async function clearPosterCacheAndMetadata() {
   await Cache.DeleteImageCache();
@@ -622,6 +672,12 @@ async function clearPosterCacheAndMetadata() {
   persistDb();
   try {
     if (fs.existsSync(LEGACY_JSON)) fs.unlinkSync(LEGACY_JSON);
+  } catch (e) {
+    /* ignore */
+  }
+  try {
+    const strayJson = path.join(CACHE_ROOT, "posterr-poster-metadata.json");
+    if (fs.existsSync(strayJson)) fs.unlinkSync(strayJson);
   } catch (e) {
     /* ignore */
   }

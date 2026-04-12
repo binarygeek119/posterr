@@ -33,6 +33,12 @@ const {
   requiresMediaServerCredential,
 } = require("./classes/mediaservers/mediaServerFactory");
 const posterMetadata = require("./classes/core/posterMetadataDb");
+const {
+  CACHE_ROOT,
+  IMAGE_CACHE_DIR,
+  MP3_CACHE_DIR,
+  RANDOM_THEMES_DIR,
+} = require("./classes/core/appPaths");
 
 // just in case someone puts in a / for the basepath value
 if (process.env.BASEPATH == "/") process.env.BASEPATH = "";
@@ -152,28 +158,28 @@ if (!fs.existsSync(dir)) {
   fs.mkdirSync(dir);
 }
 
-var dir = './saved';
+var dir = CACHE_ROOT;
 
 if (!fs.existsSync(dir)) {
-  fs.mkdirSync(dir);
+  fs.mkdirSync(dir, { recursive: true });
 }
 
-var dir = './saved/imagecache';
+var dir = IMAGE_CACHE_DIR;
 
 if (!fs.existsSync(dir)) {
-  fs.mkdirSync(dir);
+  fs.mkdirSync(dir, { recursive: true });
 }
 
-var dir = './saved/mp3cache';
+var dir = MP3_CACHE_DIR;
 
 if (!fs.existsSync(dir)) {
-  fs.mkdirSync(dir);
+  fs.mkdirSync(dir, { recursive: true });
 }
 
-var dir = './saved/randomthemes';
+var dir = RANDOM_THEMES_DIR;
 
 if (!fs.existsSync(dir)) {
-  fs.mkdirSync(dir);
+  fs.mkdirSync(dir, { recursive: true });
 }
 
 var dir = './public';
@@ -2024,7 +2030,7 @@ if (BASEURL == "") {
   //  console.log(__dirname);
   //  console.log(process.cwd());
   app.use(express.static(path.join(__dirname, "public")));
-  app.use(express.static(path.join(process.cwd(), "saved")));
+  app.use(express.static(CACHE_ROOT));
   app.use(express.static(path.join(process.cwd(), "public")));
   // app.use("/js",express.static(path.join(__dirname, "/node_modules/fitty/dist")));  
   // app.use("/bscss",express.static(path.join(__dirname, "/node_modules/bootstrap/dist/css")));
@@ -2033,7 +2039,7 @@ if (BASEURL == "") {
 }
 else {
   app.use(BASEURL, express.static(__dirname + '/public'));
-  app.use(BASEURL, express.static(process.cwd() + '/saved'));
+  app.use(BASEURL, express.static(CACHE_ROOT));
   app.use(BASEURL, express.static(process.cwd() + '/public'));
 
 }

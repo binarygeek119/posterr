@@ -1,11 +1,10 @@
 # ignore the following folders
 /docker-data
 /node_modules
-/saved/mp3cache/**
-/saved/imagecache/**
-/saved/posterr-poster-metadata.json
-/saved/posterr-poster-metadata.json.migrated.bak
-/saved/posterr-poster-metadata.db
+# Legacy cache location (optional local data); use config/cache/ instead
+/saved/**
+/config/cache/**
+!/config/cache/.keep
 /config/*.json
 /dist
 /public/custom/**

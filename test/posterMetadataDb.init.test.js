@@ -25,16 +25,16 @@ describe("posterMetadataDb SQLite", () => {
   test("init creates db file and returns empty stats", async () => {
     const posterMetadata = require("../classes/core/posterMetadataDb");
     await posterMetadata.initPosterMetadataDb();
-    const dbPath = path.join(tmp, "saved", "posterr-poster-metadata.db");
+    const dbPath = path.join(tmp, "config", "cache", "posterr-poster-metadata.db");
     expect(fs.existsSync(dbPath)).toBe(true);
     const stats = posterMetadata.getCacheDashboardStats();
     expect(stats.posterDb.rowCount).toBe(0);
   });
 
   test("migrates legacy JSON when sqlite is new", async () => {
-    const saved = path.join(tmp, "saved");
-    fs.mkdirSync(saved, { recursive: true });
-    const legacy = {
+    const legacyDir = path.join(tmp, "saved");
+    fs.mkdirSync(legacyDir, { recursive: true });
+    const legacyDoc = {
       v: 1,
       entries: [
         {
@@ -56,8 +56,8 @@ describe("posterMetadataDb SQLite", () => {
       ],
     };
     fs.writeFileSync(
-      path.join(saved, "posterr-poster-metadata.json"),
-      JSON.stringify(legacy),
+      path.join(legacyDir, "posterr-poster-metadata.json"),
+      JSON.stringify(legacyDoc),
       "utf8"
     );
 
@@ -65,11 +65,13 @@ describe("posterMetadataDb SQLite", () => {
     await posterMetadata.initPosterMetadataDb();
     const stats = posterMetadata.getCacheDashboardStats();
     expect(stats.posterDb.rowCount).toBe(1);
-    expect(fs.existsSync(path.join(saved, "posterr-poster-metadata.json"))).toBe(
-      false
-    );
     expect(
-      fs.existsSync(path.join(saved, "posterr-poster-metadata.json.migrated.bak"))
+      fs.existsSync(path.join(legacyDir, "posterr-poster-metadata.json"))
+    ).toBe(false);
+    expect(
+      fs.existsSync(
+        path.join(legacyDir, "posterr-poster-metadata.json.migrated.bak")
+      )
     ).toBe(true);
   });
 });
