@@ -98,6 +98,7 @@ services:
     volumes:
       - ./docker/posterr/config:/usr/src/app/config
       - ./docker/posterr/custom:/usr/src/app/public/custom
+      - ./docker/posterr/saved:/usr/src/app/saved
     ports:
       - 9876:3000
     restart: unless-stopped
