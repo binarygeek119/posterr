@@ -12,6 +12,7 @@ const posterrPackage = require("../../package.json");
  * libraries, slow storage, or remote Jellyfin; poster sync uses this per page.
  */
 const LIBRARY_ITEMS_PAGE_TIMEOUT_MS = 600000;
+const POSTER_SYNC_BATCH_SIZE = 100;
 
 /**
  * Shared Emby/Jellyfin REST client.
@@ -1150,6 +1151,7 @@ class EmbyJellyfinBase {
   ) {
     const posterSyncFull = opts && opts.posterSyncFullLibrary === true;
     const sp = opts && opts.syncProgress;
+    const imagePull = (opts && opts.imagePull) || {};
     if (posterSyncFull && sp) {
       sp.phase = "fetching";
       sp.label = "Fetching library from media server…";
@@ -1157,6 +1159,9 @@ class EmbyJellyfinBase {
       sp.total = 0;
     }
     const effHasArt = posterSyncFull ? "true" : hasArt;
+    const pullBackground = effHasArt === "true" && imagePull.background !== false;
+    const pullVideoPoster = imagePull.videoPoster !== false;
+    const pullAlbumPoster = imagePull.albumPoster !== false;
 
     let odCards = [];
     let odRaw;
@@ -1298,7 +1303,40 @@ class EmbyJellyfinBase {
       );
     }
 
-    for (const md of odRaw) {
+    const odBatches = posterSyncFull
+      ? Array.from(
+          { length: Math.ceil(odRaw.length / POSTER_SYNC_BATCH_SIZE) },
+          (_, i) =>
+            odRaw.slice(
+              i * POSTER_SYNC_BATCH_SIZE,
+              (i + 1) * POSTER_SYNC_BATCH_SIZE
+            )
+        )
+      : [odRaw];
+    const totalBatches = odBatches.length;
+
+    for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
+      const batch = odBatches[batchIdx];
+      if (posterSyncFull && sp) {
+        sp.label =
+          "Caching posters and images… batch " +
+          (batchIdx + 1) +
+          "/" +
+          totalBatches;
+        console.log(
+          new Date().toLocaleString() +
+            " [poster sync] " +
+            this.appName +
+            " — processing batch " +
+            (batchIdx + 1) +
+            "/" +
+            totalBatches +
+            " (" +
+            batch.length +
+            " items)"
+        );
+      }
+      for (const md of batch) {
       const medCard = new mediaCard();
       medCard.posterLibraryLabel = String(md._jfLibraryName || "").trim();
       const type = md.Type;
@@ -1319,9 +1357,13 @@ class EmbyJellyfinBase {
           md.ImageTags && md.ImageTags.Primary
         );
         medCard.posterDownloadURL = seriesPosterUrl;
-        await this._cacheImageFromServer(seriesPosterUrl, fileName);
-        medCard.posterURL = "/imagecache/" + fileName;
-        if (effHasArt === "true") {
+        if (pullVideoPoster) {
+          await this._cacheImageFromServer(seriesPosterUrl, fileName);
+          medCard.posterURL = "/imagecache/" + fileName;
+        } else {
+          medCard.posterURL = "/images/no-poster-available.png";
+        }
+        if (pullBackground) {
           const artName = `${mediaId}-art.jpg`;
           try {
             await this._cacheImageFromServer(
@@ -1346,9 +1388,13 @@ class EmbyJellyfinBase {
           md.ImageTags && md.ImageTags.Primary
         );
         medCard.posterDownloadURL = moviePosterUrl;
-        await this._cacheImageFromServer(moviePosterUrl, movieFileName);
-        medCard.posterURL = "/imagecache/" + movieFileName;
-        if (effHasArt === "true") {
+        if (pullVideoPoster) {
+          await this._cacheImageFromServer(moviePosterUrl, movieFileName);
+          medCard.posterURL = "/imagecache/" + movieFileName;
+        } else {
+          medCard.posterURL = "/images/no-poster-available.png";
+        }
+        if (pullBackground) {
           const artName = `${md.Id}-art.jpg`.replace(/[^a-zA-Z0-9._-]/g, "_");
           try {
             await this._cacheImageFromServer(
@@ -1384,23 +1430,27 @@ class EmbyJellyfinBase {
           md.PrimaryImageTag ||
           md.primaryImageTag ||
           "";
-        const albumPoster = await this.cachePrimaryImageAny(
-          [
-            { id: md.Id, tag: albumTag },
-            { id: md.Id, tag: null },
-            {
-              id:
-                md.AlbumArtists &&
-                md.AlbumArtists[0] &&
-                (md.AlbumArtists[0].Id || md.AlbumArtists[0].id),
-              tag: null,
-            },
-          ],
-          albumFileName,
-          medCard
-        );
-        medCard.posterURL = albumPoster || "/images/no-poster-available.png";
-        if (effHasArt === "true") {
+        if (pullAlbumPoster) {
+          const albumPoster = await this.cachePrimaryImageAny(
+            [
+              { id: md.Id, tag: albumTag },
+              { id: md.Id, tag: null },
+              {
+                id:
+                  md.AlbumArtists &&
+                  md.AlbumArtists[0] &&
+                  (md.AlbumArtists[0].Id || md.AlbumArtists[0].id),
+                tag: null,
+              },
+            ],
+            albumFileName,
+            medCard
+          );
+          medCard.posterURL = albumPoster || "/images/no-poster-available.png";
+        } else {
+          medCard.posterURL = "/images/no-poster-available.png";
+        }
+        if (pullBackground) {
           const artName = `${md.Id}-art.jpg`.replace(/[^a-zA-Z0-9._-]/g, "_");
           try {
             await this._cacheImageFromServer(
@@ -1464,7 +1514,12 @@ class EmbyJellyfinBase {
         /[^a-zA-Z0-9._-]/g,
         "_"
       );
-      await this.cacheItemPersonPortraits(medCard, md, odPortraitKey);
+      await this.cacheItemPersonPortraits(
+        medCard,
+        md,
+        odPortraitKey,
+        imagePull
+      );
 
       if (md.Id) medCard.posterApiItemId = String(md.Id);
 
@@ -1506,6 +1561,7 @@ class EmbyJellyfinBase {
           );
         }
       }
+      }
     }
 
     let now = new Date();
@@ -1536,9 +1592,14 @@ class EmbyJellyfinBase {
    * @param {object} item - session NowPlayingItem or on-demand row
    * @param {string} safePrefix - safe cache filename prefix
    */
-  async cacheItemPersonPortraits(medCard, item, safePrefix) {
+  async cacheItemPersonPortraits(medCard, item, safePrefix, imagePull) {
     const safe = String(safePrefix || "x").replace(/[^a-zA-Z0-9._-]/g, "_");
     const people = item.People || item.people || [];
+    const pull = imagePull || {};
+    const pullCast = pull.castPortrait !== false;
+    const pullDirector = pull.directorPortrait !== false;
+    const pullAuthor = pull.authorPortrait !== false;
+    const pullArtist = pull.artistPortrait !== false;
 
     const cachePerson = async (person, suffix) => {
       if (!person) return "";
@@ -1563,37 +1624,37 @@ class EmbyJellyfinBase {
     };
 
     const actors = people.filter((p) => (p.Type || p.type || "") === "Actor");
-    if (actors[0]) {
-      medCard.portraitActorURL = await cachePerson(actors[0], "actor");
-      medCard.featuredActorName = actors[0].Name || actors[0].name || "";
-      medCard.featuredActorCredits = await this.getPersonCredits(
-        actors[0].Id || actors[0].id,
-        5
-      );
-    }
-    let actressPerson = null;
-    for (let i = 1; i < actors.length; i++) {
-      const g = actors[i].Gender || actors[i].gender;
-      if (g === "Female" || g === 1 || g === "1") {
-        actressPerson = actors[i];
-        break;
+    if (pullCast) {
+      if (actors[0]) {
+        medCard.portraitActorURL = await cachePerson(actors[0], "actor");
+        medCard.featuredActorName = actors[0].Name || actors[0].name || "";
+        medCard.featuredActorCredits = await this.getPersonCredits(
+          actors[0].Id || actors[0].id,
+          5
+        );
+      }
+      let actressPerson = null;
+      for (let i = 1; i < actors.length; i++) {
+        const g = actors[i].Gender || actors[i].gender;
+        if (g === "Female" || g === 1 || g === "1") {
+          actressPerson = actors[i];
+          break;
+        }
+      }
+      if (!actressPerson && actors[1]) actressPerson = actors[1];
+      if (actressPerson) {
+        medCard.portraitActressURL = await cachePerson(actressPerson, "actress");
+        medCard.featuredActressName =
+          actressPerson.Name || actressPerson.name || "";
+        medCard.featuredActressCredits = await this.getPersonCredits(
+          actressPerson.Id || actressPerson.id,
+          5
+        );
       }
     }
-    if (!actressPerson && actors[1]) actressPerson = actors[1];
-    if (actressPerson) {
-      medCard.portraitActressURL = await cachePerson(actressPerson, "actress");
-      medCard.featuredActressName =
-        actressPerson.Name || actressPerson.name || "";
-      medCard.featuredActressCredits = await this.getPersonCredits(
-        actressPerson.Id || actressPerson.id,
-        5
-      );
-    }
 
-    const dirs = people.filter(
-      (p) => (p.Type || p.type || "") === "Director"
-    );
-    if (dirs[0]) {
+    const dirs = people.filter((p) => (p.Type || p.type || "") === "Director");
+    if (pullDirector && dirs[0]) {
       medCard.portraitDirectorURL = await cachePerson(dirs[0], "director");
       medCard.featuredDirectorName = dirs[0].Name || dirs[0].name || "";
       medCard.featuredDirectorCredits = await this.getPersonCredits(
@@ -1605,7 +1666,7 @@ class EmbyJellyfinBase {
     const writers = people.filter((p) =>
       ["Writer", "Author"].includes(String(p.Type || p.type || ""))
     );
-    if (writers[0]) {
+    if (pullAuthor && writers[0]) {
       medCard.portraitAuthorURL = await cachePerson(writers[0], "author");
       medCard.featuredAuthorName = writers[0].Name || writers[0].name || "";
       medCard.featuredAuthorCredits = await this.getPersonCredits(
@@ -1616,7 +1677,7 @@ class EmbyJellyfinBase {
     }
 
     const albumArtists = item.AlbumArtists || item.albumArtists;
-    if (albumArtists && albumArtists[0]) {
+    if (pullArtist && albumArtists && albumArtists[0]) {
       const aa = albumArtists[0];
       const pid = aa.Id || aa.id;
       medCard.featuredArtistName =

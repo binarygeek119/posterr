@@ -125,6 +125,9 @@ class utility {
     recentlyAdded,
     options
   ) {
+    if (Number(numberOnDemand) <= 0) {
+      return Array.isArray(mediaCards) ? mediaCards.slice() : [];
+    }
     if (options && options.includeAll === true) {
       return Array.isArray(mediaCards) ? mediaCards.slice() : [];
     }

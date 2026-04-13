@@ -556,6 +556,46 @@ function primaryCachedPosterSlideCount() {
   return 48;
 }
 
+function settingEnabled(val, defaultValue) {
+  if (val === undefined || val === null) return !!defaultValue;
+  const s = String(val).toLowerCase().trim();
+  if (!s) return !!defaultValue;
+  return s !== "false" && s !== "0" && s !== "off" && s !== "no";
+}
+
+function buildImagePullOptions() {
+  return {
+    background: settingEnabled(loadedSettings && loadedSettings.hasArt, false),
+    videoPoster: settingEnabled(
+      loadedSettings && loadedSettings.displayPosterVideo,
+      true
+    ),
+    albumPoster: settingEnabled(
+      loadedSettings && loadedSettings.displayPosterAlbum,
+      true
+    ),
+    bookPoster: settingEnabled(
+      loadedSettings && loadedSettings.displayPosterBooks,
+      true
+    ),
+    castPortrait:
+      settingEnabled(loadedSettings && loadedSettings.displayPosterActor, false) ||
+      settingEnabled(loadedSettings && loadedSettings.displayPosterActress, false),
+    directorPortrait: settingEnabled(
+      loadedSettings && loadedSettings.displayPosterDirector,
+      false
+    ),
+    authorPortrait: settingEnabled(
+      loadedSettings && loadedSettings.displayPosterAuthor,
+      false
+    ),
+    artistPortrait: settingEnabled(
+      loadedSettings && loadedSettings.displayPosterArtist,
+      false
+    ),
+  };
+}
+
 /** Library-style slides: cached poster DB first when enabled; live on-demand only as backup. */
 function buildLibrarySlideDeckFromPosterCache() {
   if (!preferCachedPostersEnabled()) return odCards;
@@ -1070,7 +1110,10 @@ async function loadOnDemand() {
       loadedSettings.hasArt,
       loadedSettings.genres,
       loadedSettings.recentlyAddedDays,
-      loadedSettings.contentRatings
+      loadedSettings.contentRatings,
+      {
+        imagePull: buildImagePullOptions(),
+      }
     );
     if (preferCachedPostersEnabled()) {
       posterMetadata.applyCachedPostersToMediaCards(
@@ -1497,7 +1540,7 @@ async function syncFullPosterLibraryFromMediaServer(options) {
   if (posterSyncProgressState.status === "running") {
     return;
   }
-  if (!loadedSettings || !isMediaServerEnabled) return;
+  if (!loadedSettings || !isMediaServerEnabled || isMediaServerUnavailable) return;
   if (
     !loadedSettings.onDemandLibraries ||
     !String(loadedSettings.onDemandLibraries).trim()
@@ -1568,6 +1611,7 @@ async function syncFullPosterLibraryFromMediaServer(options) {
       {
         posterSyncFullLibrary: true,
         syncProgress: posterSyncProgressState,
+        imagePull: buildImagePullOptions(),
       }
     );
     posterSyncProgressState.phase = "registering";
@@ -1758,7 +1802,7 @@ async function startup(clearCache) {
   linkCards = [];
 
   // run housekeeping job 
-  if (clearCache !== false){
+  if (clearCache === true){
     await houseKeeping();
 //    let d = new Date();
 //    console.log(d.toLocaleString() + ` ** Restart/reload **`);
@@ -1942,7 +1986,7 @@ async function startup(clearCache) {
   schedulePosterMetadataRefresh();
 
   // restart timer
-  houseKeepingClock = setInterval(startup, restartSeconds); // daily
+  houseKeepingClock = setInterval(() => startup(false), restartSeconds); // daily
 
   return;
 }
@@ -1988,7 +2032,7 @@ async function saveReset(formObject) {
 
 // call all card providers - initial card loads and sets scheduled runs
 //TODO - to remove!    console.log('<< INITIAL START >>');
-startup(true);
+startup(false);
 
 //use ejs templating engine
 app.set("view engine", "ejs");

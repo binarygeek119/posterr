@@ -6,6 +6,7 @@ const core = require("./../core/cache");
 const posterSyncLib = require("./../core/posterSyncProgress");
 const { CardTypeEnum } = require("./../cards/CardType");
 const { error } = require("jquery");
+const POSTER_SYNC_BATCH_SIZE = 100;
 // const sizeOf = require("image-size");
 
 /**
@@ -571,6 +572,7 @@ class Plex {
   ) {
     const posterSyncFull = opts && opts.posterSyncFullLibrary === true;
     const sp = opts && opts.syncProgress;
+    const imagePull = (opts && opts.imagePull) || {};
     if (posterSyncFull && sp) {
       sp.phase = "fetching";
       sp.label = "Fetching library from media server…";
@@ -581,6 +583,9 @@ class Plex {
     const effPlayThemes = posterSyncFull ? "false" : playThemes;
     const effPlayGenenericThemes = posterSyncFull ? "false" : playGenenericThemes;
     const effHasArt = posterSyncFull ? "true" : hasArt;
+    const pullBackground = effHasArt == "true" && imagePull.background !== false;
+    const pullVideoPoster = imagePull.videoPoster !== false;
+    const pullAlbumPoster = imagePull.albumPoster !== false;
 
     let odCards = [];
     let odRaw;
@@ -716,9 +721,39 @@ class Plex {
             ")"
         );
       }
+      const odBatches = posterSyncFull
+        ? Array.from(
+            { length: Math.ceil(odRaw.length / POSTER_SYNC_BATCH_SIZE) },
+            (_, i) =>
+              odRaw.slice(
+                i * POSTER_SYNC_BATCH_SIZE,
+                (i + 1) * POSTER_SYNC_BATCH_SIZE
+              )
+          )
+        : [odRaw];
+      const totalBatches = odBatches.length;
       // move through results and populate media cards
-      await odRaw.reduce(async (memo, md) => {
-        await memo;
+      for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
+        const batch = odBatches[batchIdx];
+        if (posterSyncFull && sp) {
+          sp.label =
+            "Caching posters and images… batch " +
+            (batchIdx + 1) +
+            "/" +
+            totalBatches;
+          console.log(
+            new Date().toLocaleString() +
+              " [poster sync] Plex — processing batch " +
+              (batchIdx + 1) +
+              "/" +
+              totalBatches +
+              " (" +
+              batch.length +
+              " items)"
+          );
+        }
+        await batch.reduce(async (memo, md) => {
+          await memo;
         const medCard = new mediaCard();
         // modify inputs, based upon tv episode or movie result structure
         switch (md.type) {
@@ -774,13 +809,17 @@ class Plex {
               "?X-Plex-Token=" +
               this.plexToken;
 
-            medCard.posterDownloadURL = url;
-            await core.CacheImage(url, fileName);
-            medCard.posterURL = "/imagecache/" + fileName;
+            if (pullVideoPoster) {
+              medCard.posterDownloadURL = url;
+              await core.CacheImage(url, fileName);
+              medCard.posterURL = "/imagecache/" + fileName;
+            } else {
+              medCard.posterURL = "/images/no-poster-available.png";
+            }
 
             //download poster art
             // check art exists
-            if (md.art !== undefined && effHasArt == "true") {
+            if (md.art !== undefined && pullBackground) {
               fileName = mediaId + "-art.jpg";
               if (this.https) prefix = "https://";
               url =
@@ -816,13 +855,17 @@ class Plex {
               md.thumb +
               "?X-Plex-Token=" +
               this.plexToken;
-            medCard.posterDownloadURL = movieUrl;
-            await core.CacheImage(movieUrl, movieFileName);
-            medCard.posterURL = "/imagecache/" + movieFileName;
+            if (pullVideoPoster) {
+              medCard.posterDownloadURL = movieUrl;
+              await core.CacheImage(movieUrl, movieFileName);
+              medCard.posterURL = "/imagecache/" + movieFileName;
+            } else {
+              medCard.posterURL = "/images/no-poster-available.png";
+            }
 
             //download poster
             // check art exists
-            if (md.art !== undefined && effHasArt == "true") {
+            if (md.art !== undefined && pullBackground) {
               movieFileName = md.ratingKey + "-art.jpg";
               if (this.https) moviePlexPrefix = "https://";
               movieUrl =
@@ -905,10 +948,14 @@ class Plex {
                 md.thumb +
                 "?X-Plex-Token=" +
                 this.plexToken;
-              medCard.posterDownloadURL = albImgUrl;
-              await core.CacheImage(albImgUrl, albPoster);
-              medCard.posterURL = "/imagecache/" + albPoster;
-              if (md.art !== undefined && effHasArt == "true") {
+              if (pullAlbumPoster) {
+                medCard.posterDownloadURL = albImgUrl;
+                await core.CacheImage(albImgUrl, albPoster);
+                medCard.posterURL = "/imagecache/" + albPoster;
+              } else {
+                medCard.posterURL = "/images/no-poster-available.png";
+              }
+              if (md.art !== undefined && pullBackground) {
                 let albArtFile = md.ratingKey + "-art.jpg";
                 let albArtUrl =
                   albPre +
@@ -920,7 +967,7 @@ class Plex {
                   this.plexToken;
                 await core.CacheImage(albArtUrl, albArtFile);
                 medCard.posterArtURL = "/imagecache/" + albArtFile;
-              } else if (md.grandparentArt !== undefined && effHasArt == "true") {
+              } else if (md.grandparentArt !== undefined && pullBackground) {
                 let albArtFile = md.ratingKey + "-art.jpg";
                 let albArtUrl =
                   albPre +
@@ -1023,7 +1070,7 @@ class Plex {
         medCard.summary = md.summary;
         medCard.cast = util.formatCastFromPlexRole(md.Role);
         medCard.directors = util.formatDirectorsFromPlexDirector(md.Director);
-        await this.populatePlexPersonPosters(medCard, md);
+        await this.populatePlexPersonPosters(medCard, md, imagePull);
 
         // calculate for recently added (if set)
         var includeTitle = false;
@@ -1072,7 +1119,8 @@ class Plex {
           }
         }
 
-      }, undefined);
+        }, undefined);
+      }
     }
     let now = new Date();
     if (odCards.length == 0) {
@@ -1378,68 +1426,79 @@ class Plex {
   /**
    * Caches Role / Director / Writer / music artist thumbs for display-poster settings.
    */
-  async populatePlexPersonPosters(medCard, md) {
+  async populatePlexPersonPosters(medCard, md, imagePull) {
     const rk = md.ratingKey != null ? String(md.ratingKey) : "x";
     const safeRk = rk.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const pull = imagePull || {};
+    const pullCast = pull.castPortrait !== false;
+    const pullDirector = pull.directorPortrait !== false;
+    const pullAuthor = pull.authorPortrait !== false;
+    const pullArtist = pull.artistPortrait !== false;
 
-    const roles = this._plexTaggedList(md.Role);
-    let actorDone = false;
-    for (const r of roles) {
-      const th = r.thumb || r.Thumb;
-      if (!th) continue;
-      if (!actorDone) {
-        medCard.portraitActorURL = await this._cachePlexThumb(
-          th,
-          `${safeRk}-actor.jpg`
-        );
-        medCard.featuredActorName = (r.tag || r.Tag || "").toString();
-        medCard.featuredActorCredits = this._fallbackPlexCredits(md);
-        actorDone = true;
-      } else {
-        medCard.portraitActressURL = await this._cachePlexThumb(
-          th,
-          `${safeRk}-actress.jpg`
-        );
-        medCard.featuredActressName = (r.tag || r.Tag || "").toString();
-        medCard.featuredActressCredits = this._fallbackPlexCredits(md);
-        break;
+    if (pullCast) {
+      const roles = this._plexTaggedList(md.Role);
+      let actorDone = false;
+      for (const r of roles) {
+        const th = r.thumb || r.Thumb;
+        if (!th) continue;
+        if (!actorDone) {
+          medCard.portraitActorURL = await this._cachePlexThumb(
+            th,
+            `${safeRk}-actor.jpg`
+          );
+          medCard.featuredActorName = (r.tag || r.Tag || "").toString();
+          medCard.featuredActorCredits = this._fallbackPlexCredits(md);
+          actorDone = true;
+        } else {
+          medCard.portraitActressURL = await this._cachePlexThumb(
+            th,
+            `${safeRk}-actress.jpg`
+          );
+          medCard.featuredActressName = (r.tag || r.Tag || "").toString();
+          medCard.featuredActressCredits = this._fallbackPlexCredits(md);
+          break;
+        }
       }
     }
 
-    for (const d of this._plexTaggedList(md.Director)) {
-      const th = d.thumb || d.Thumb;
-      if (th) {
-        medCard.portraitDirectorURL = await this._cachePlexThumb(
-          th,
-          `${safeRk}-director.jpg`
-        );
-        medCard.featuredDirectorName = (d.tag || d.Tag || "").toString();
-        medCard.featuredDirectorCredits = this._fallbackPlexCredits(md);
-        break;
+    if (pullDirector) {
+      for (const d of this._plexTaggedList(md.Director)) {
+        const th = d.thumb || d.Thumb;
+        if (th) {
+          medCard.portraitDirectorURL = await this._cachePlexThumb(
+            th,
+            `${safeRk}-director.jpg`
+          );
+          medCard.featuredDirectorName = (d.tag || d.Tag || "").toString();
+          medCard.featuredDirectorCredits = this._fallbackPlexCredits(md);
+          break;
+        }
       }
     }
 
-    for (const w of this._plexTaggedList(md.Writer)) {
-      const th = w.thumb || w.Thumb;
-      if (th) {
-        medCard.portraitAuthorURL = await this._cachePlexThumb(
-          th,
-          `${safeRk}-author.jpg`
-        );
-        medCard.featuredAuthorName = (w.tag || w.Tag || "").toString();
-        medCard.featuredAuthorCredits = this._fallbackPlexAuthorCredits(md);
-        break;
+    if (pullAuthor) {
+      for (const w of this._plexTaggedList(md.Writer)) {
+        const th = w.thumb || w.Thumb;
+        if (th) {
+          medCard.portraitAuthorURL = await this._cachePlexThumb(
+            th,
+            `${safeRk}-author.jpg`
+          );
+          medCard.featuredAuthorName = (w.tag || w.Tag || "").toString();
+          medCard.featuredAuthorCredits = this._fallbackPlexAuthorCredits(md);
+          break;
+        }
       }
     }
 
-    if (md.type === "track" && md.grandparentThumb) {
+    if (pullArtist && md.type === "track" && md.grandparentThumb) {
       medCard.portraitArtistURL = await this._cachePlexThumb(
         md.grandparentThumb,
         `${safeRk}-artist.jpg`
       );
       medCard.featuredArtistName = (md.grandparentTitle || "").toString();
       medCard.featuredArtistCredits = this._fallbackPlexArtistCredits(md);
-    } else if (md.type === "album") {
+    } else if (pullArtist && md.type === "album") {
       const ath =
         md.parentThumb && md.parentThumb !== md.thumb
           ? md.parentThumb

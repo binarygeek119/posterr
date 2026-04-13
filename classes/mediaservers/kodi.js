@@ -7,6 +7,7 @@ const core = require("./../core/cache");
 const posterSyncLib = require("./../core/posterSyncProgress");
 const { CardTypeEnum } = require("./../cards/CardType");
 const EmbyJellyfinBase = require("./embyJellyfinBase");
+const POSTER_SYNC_BATCH_SIZE = 100;
 
 /**
  * Kodi JSON-RPC over HTTP (Settings → Services → Control → Allow remote control via HTTP).
@@ -678,6 +679,7 @@ class Kodi {
   ) {
     const posterSyncFull = opts && opts.posterSyncFullLibrary === true;
     const sp = opts && opts.syncProgress;
+    const imagePull = (opts && opts.imagePull) || {};
     if (posterSyncFull && sp) {
       sp.phase = "fetching";
       sp.label = "Fetching library from media server…";
@@ -685,6 +687,8 @@ class Kodi {
       sp.total = 0;
     }
     const effHasArt = posterSyncFull ? "true" : hasArt;
+    const pullBackground = effHasArt === "true" && imagePull.background !== false;
+    const pullVideoPoster = imagePull.videoPoster !== false;
 
     let odCards = [];
     let odRaw;
@@ -825,7 +829,38 @@ class Kodi {
       );
     }
 
-    for (const md of odRaw) {
+    const odBatches = posterSyncFull
+      ? Array.from(
+          { length: Math.ceil(odRaw.length / POSTER_SYNC_BATCH_SIZE) },
+          (_, i) =>
+            odRaw.slice(
+              i * POSTER_SYNC_BATCH_SIZE,
+              (i + 1) * POSTER_SYNC_BATCH_SIZE
+            )
+        )
+      : [odRaw];
+    const totalBatches = odBatches.length;
+
+    for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
+      const batch = odBatches[batchIdx];
+      if (posterSyncFull && sp) {
+        sp.label =
+          "Caching posters and images… batch " +
+          (batchIdx + 1) +
+          "/" +
+          totalBatches;
+        console.log(
+          new Date().toLocaleString() +
+            " [poster sync] Kodi — processing batch " +
+            (batchIdx + 1) +
+            "/" +
+            totalBatches +
+            " (" +
+            batch.length +
+            " items)"
+        );
+      }
+      for (const md of batch) {
       const medCard = new mediaCard();
       medCard.posterLibraryLabel = String(md._kodiLabel || "").trim();
       const kind = md._kodiKind;
@@ -845,15 +880,17 @@ class Kodi {
             : "";
         const posterVfs = this.posterFromItem(md);
         const fileName = `kodi-show-${mediaId}.jpg`;
-        if (posterVfs) {
+        if (pullVideoPoster && posterVfs) {
           const url = this.vfsImageUrl(posterVfs);
           if (url) {
             medCard.posterDownloadURL = url;
             await core.CacheImage(url, fileName);
           }
           medCard.posterURL = "/imagecache/" + fileName;
+        } else if (!pullVideoPoster) {
+          medCard.posterURL = "/images/no-poster-available.png";
         }
-        if (effHasArt === "true") {
+        if (pullBackground) {
           const fan = this.fanartFromItem(md);
           if (fan) {
             const artName = `kodi-show-${mediaId}-art.jpg`;
@@ -874,15 +911,17 @@ class Kodi {
         const mid = md.movieid != null ? md.movieid : md.title;
         const movieFileName = `kodi-movie-${String(mid).replace(/[^a-zA-Z0-9]/g, "")}.jpg`;
         const posterVfs = this.posterFromItem(md);
-        if (posterVfs) {
+        if (pullVideoPoster && posterVfs) {
           const url = this.vfsImageUrl(posterVfs);
           if (url) {
             medCard.posterDownloadURL = url;
             await core.CacheImage(url, movieFileName);
           }
           medCard.posterURL = "/imagecache/" + movieFileName;
+        } else if (!pullVideoPoster) {
+          medCard.posterURL = "/images/no-poster-available.png";
         }
-        if (effHasArt === "true") {
+        if (pullBackground) {
           const fan = this.fanartFromItem(md);
           if (fan) {
             const artName = movieFileName.replace(/\.jpg$/, "-art.jpg");
@@ -978,6 +1017,7 @@ class Kodi {
               '"'
           );
         }
+      }
       }
     }
 
