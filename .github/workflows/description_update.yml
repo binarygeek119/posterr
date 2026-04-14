@@ -1,25 +1,38 @@
-name: Update Docker Hub Description
+name: Build Docker image and then push to DockerHub
 on:
   push:
     branches: [ master ]
-    paths:
-      - README.md
-      - .github/workflows/dockerhub-description.yml
   pull_request:
     branches: [ master ]
-    paths:
-      - README.md
-      - .github/workflows/dockerhub-description.yml
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
 jobs:
-  dockerHubDescription:
+  build-container:
+    name: Build container
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-
-    - name: Docker Hub Description
-      uses: peter-evans/dockerhub-description@v4
-      with:
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_HUB_TOKEN }}
-        repository: binarygeek119/posterr
-        short-description: ${{ github.event.repository.description }}
+      - name: Checkout code
+        uses: actions/checkout@v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            binarygeek119/posterr:latest
+            binarygeek119/posterr:${{ github.run_number }}
+      - name: Run a one-line script
+        run: echo Hello, world!
+      - name: Run a multi-line script
+        run: |
+          echo Add other actions to build,
+          echo test, and deploy your project.
