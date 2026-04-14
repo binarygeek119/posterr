@@ -20,7 +20,7 @@ jobs:
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-          repository: petersem/posterr
+          repository: binarygeek119/posterr
           tags: latest, ${{ github.run_number }}
       - name: Run a one-line script
         run: echo Hello, world!
