@@ -9,6 +9,7 @@ https://hub.docker.com/r/binarygeek119/postarr
 binarygeek119/postarr:latest
 
 
+
 ![Docker Pulls](https://img.shields.io/docker/pulls/petersem/posterr) 
 ![Docker Image Size (tag)](https://img.shields.io/docker/image-size/petersem/posterr/latest?logo=docker) 
 ![GitHub Stars](https://img.shields.io/github/stars/petersem/posterr?style=flat)
