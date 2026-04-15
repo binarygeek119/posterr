@@ -15,3 +15,10 @@
 !/public/custom/pictures/default
 !/public/custom/pictures/readme.txt
 !/public/custom/custom.css
+
+# Ads + custom pictures live under config/ (served at /custom/ads and /custom/pictures)
+/config/ads/**
+!/config/ads/.keep
+/config/custom-pictures/**
+!/config/custom-pictures/.keep
+!/config/custom-pictures/default/.keep

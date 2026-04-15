@@ -21,7 +21,11 @@ class MediaCard {
     this.posterLibraryKind = "";
     /** Plex/Jellyfin/Emby/Kodi on-demand library display name (for cache stats) */
     this.posterLibraryLabel = "";
+    /** True when this title comes from a library configured as 3D. */
+    this.is3D = false;
     this.posterArtURL = "";
+    /** Cached title logo / clearlogo (PNG under /imagecache/*-logo.png) when sync pulls it */
+    this.posterLogoURL = "";
     this.posterAR = "";
     this.contentRating = "";
     this.ratingColour = "";
@@ -61,6 +65,9 @@ class MediaCard {
     this.youtubeKey = "";
     /** Comma-separated principal cast; shown when settings.showCast is true */
     this.cast = "";
+    /** First two billed names for compact on-demand pills (optional; falls back to splitting cast) */
+    this.actor1 = "";
+    this.actor2 = "";
     /** Comma-separated directors; shown when settings.showDirectors is true */
     this.directors = "";
     /** Comma-separated authors; shown when settings.showAuthors is true */
@@ -83,6 +90,8 @@ class MediaCard {
     this.featuredDirectorCredits = [];
     this.featuredAuthorCredits = [];
     this.featuredArtistCredits = [];
+    /** Rich HTML for Ad card price/add-on badges in the footer strip */
+    this.adPricingHtml = "";
   }
 
   /**
@@ -119,11 +128,17 @@ class MediaCard {
     let pauseMessage = "";
 
     // set header/footer hidden values
-    // Keep music/book metadata visible in footer for on-demand cards.
+    // Keep metadata footer visible for on-demand music/books (legacy) and for on-demand
+    // movies/shows/episodes so rating, year, genre, studio, etc. pills can appear.
     const isMusicCard = this.mediaType === "album" || this.mediaType === "track";
     const isBookCard =
       this.mediaType === "ebook" || this.mediaType === "audiobook";
-    const keepMetaFooter = isMusicCard || isBookCard;
+    const isVideoOnDemand =
+      this.cardType[0] === "On-demand" &&
+      (this.mediaType === "movie" ||
+        this.mediaType === "episode" ||
+        this.mediaType === "show");
+    const keepMetaFooter = isMusicCard || isBookCard || isVideoOnDemand;
     if (hideTitle == "true" && this.cardType[0] == "On-demand" && !keepMetaFooter) {
       hiddenTitle = "hidden";
     }
@@ -144,6 +159,14 @@ class MediaCard {
       }
     }
 
+    if (this.cardType[0] == "Ad") {
+      if (hasArt == "true" && this.posterArtURL !== "") {
+        fullScreen = "fullscreenCustom";
+      } else {
+        fullScreen = "fullscreen";
+      }
+    }
+
     if(this.cardType[0] == "Picture"){
       pauseMessage = `<div style="position: relative; z-index: 1;">
   <span id="overlay_text` + this.ID + `" style="position: fixed; bottom: 5px; z-index: 3;"></span>
@@ -156,6 +179,10 @@ class MediaCard {
     
     // get custom card title
     let cardCustomTitle = this.cardType[1] !== "" ? this.cardType[1] : this.cardType[0];
+    if (this.cardType[0] == "Ad") {
+      const t = String(this.title || "").trim();
+      cardCustomTitle = t ? util.escapeHtml(t) : "Ad";
+    }
 
     var decRemainingTime = this.runDuration - this.runProgress;
     var et = new Date();
@@ -217,6 +244,12 @@ class MediaCard {
     let yearPill = "";
     let pagePill = "";
     let endTimePill = "";
+    let threeDPill = "";
+    let genrePill = "";
+    let libraryPill = "";
+    let episodePill = "";
+    let leadCastPill1 = "";
+    let leadCastPill2 = "";
     let castPill = "";
     let directorPill = "";
     let authorPill = "";
@@ -352,6 +385,8 @@ class MediaCard {
       }
     }
 
+    const isAdCard = this.cardType[0] == "Ad";
+
     const portraitStrip = (() => {
       const parts = [];
       const add = (on, url, cls) => {
@@ -383,12 +418,78 @@ class MediaCard {
         "</span>";
     }
 
+    const genreStr = (() => {
+      const g = this.genre;
+      if (g == null) return "";
+      if (Array.isArray(g)) {
+        return g
+          .map((x) => String(x || "").trim())
+          .filter(Boolean)
+          .slice(0, 4)
+          .join(" · ");
+      }
+      const s = String(g).trim();
+      if (!s) return "";
+      return s
+        .split(/[,|]/)
+        .map((x) => x.trim())
+        .filter(Boolean)
+        .slice(0, 4)
+        .join(" · ");
+    })();
+    if (!(await util.isEmpty(genreStr))) {
+      genrePill =
+        "<span class='badge badge-pill badge-info'>" +
+        util.escapeHtml(genreStr) +
+        "</span>";
+    }
+
+    if (!(await util.isEmpty(this.posterLibraryLabel))) {
+      const is3dTitle =
+        this.is3D === true || String(this.is3D || "").toLowerCase() === "true";
+      const libTrim = String(this.posterLibraryLabel).trim();
+      // On-demand 3D: only the "3D" badge, not the library (e.g. "3D Movies").
+      // On-demand non-3D movie: hide generic library names like "Movies" / "Films" (no extra pill).
+      const genericMovieLibraryPill =
+        this.mediaType === "movie" &&
+        /^(movies?|films?)$/i.test(libTrim);
+      const suppressLibraryPill =
+        (isVideoOnDemand && is3dTitle) ||
+        (isVideoOnDemand && !is3dTitle && genericMovieLibraryPill);
+      if (!suppressLibraryPill) {
+        libraryPill =
+          "<span class='badge badge-pill badge-dark'>" +
+          util.escapeHtml(libTrim.slice(0, 48)) +
+          "</span>";
+      }
+    }
+
+    if (
+      !(await util.isEmpty(this.episodeName)) &&
+      this.mediaType === "episode"
+    ) {
+      episodePill =
+        "<span class='badge badge-pill badge-secondary'>" +
+        util.escapeHtml(this.episodeName) +
+        "</span>";
+    }
+
+    if (this.is3D === true || String(this.is3D || "").toLowerCase() === "true") {
+      threeDPill = "<span class='badge badge-pill badge-dark'>3D</span>";
+    }
+
     if (!(await util.isEmpty(this.contentRating))) {
+      const ratingColourClass = this.ratingColour || "badge-dark";
+      const crRaw = String(this.contentRating).trim();
+      const crLabel =
+        isVideoOnDemand && crRaw && !/^(nr|unrated)$/i.test(crRaw)
+          ? "Rated " + util.escapeHtml(crRaw)
+          : util.escapeHtml(crRaw);
       contentRatingPill =
         "<span class='badge badge-pill " +
-        this.ratingColour +
+        ratingColourClass +
         "'>" +
-        this.contentRating +
+        crLabel +
         "</span>";
     }
 
@@ -460,8 +561,15 @@ class MediaCard {
     }
 
     if (!(await util.isEmpty(this.rating))) {
-      ratingPill =
-        "<span class='badge badge-pill badge-dark'> " + this.rating + "</span>";
+      if (isVideoOnDemand) {
+        ratingPill =
+          "<span class='badge badge-pill badge-secondary'>Audience " +
+          util.escapeHtml(String(this.rating).trim()) +
+          "</span>";
+      } else {
+        ratingPill =
+          "<span class='badge badge-pill badge-dark'> " + this.rating + "</span>";
+      }
     }
 
     if(this.cardType[0] == "Now Screening" || this.cardType[0] == "Playing") {
@@ -469,7 +577,36 @@ class MediaCard {
         "<span class='badge badge-pill badge-dark'>End: " + endTime + "</span>";
     }
 
-    if (showCast === "true" && !(await util.isEmpty(this.cast))) {
+    if (isVideoOnDemand) {
+      let n1 = String(this.actor1 || "").trim();
+      let n2 = String(this.actor2 || "").trim();
+      if (!n1 || !n2) {
+        const parts = String(this.cast || "")
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean);
+        if (!n1) n1 = parts[0] || "";
+        if (!n2) n2 = parts[1] || "";
+      }
+      if (n1) {
+        leadCastPill1 =
+          "<span class='badge badge-pill badge-secondary'>" +
+          util.escapeHtml(n1) +
+          "</span>";
+      }
+      if (n2) {
+        leadCastPill2 =
+          "<span class='badge badge-pill badge-secondary'>" +
+          util.escapeHtml(n2) +
+          "</span>";
+      }
+    }
+
+    if (
+      showCast === "true" &&
+      !(await util.isEmpty(this.cast)) &&
+      !isVideoOnDemand
+    ) {
       castPill =
         "<span class='badge badge-pill badge-secondary'>Cast: " +
         util.escapeHtml(this.cast) +
@@ -498,6 +635,59 @@ class MediaCard {
         "<span class='badge badge-pill badge-secondary'>Artist: " +
         util.escapeHtml(this.albumArtist) +
         "</span>";
+    }
+
+    let tagDetailsHtml = "";
+    if (isAdCard) {
+      tagDetailsHtml = this.adPricingHtml || "";
+    } else if (isVideoOnDemand) {
+      tagDetailsHtml =
+        contentRatingPill +
+        ratingPill +
+        studioPill +
+        runTimePill +
+        leadCastPill1 +
+        leadCastPill2 +
+        genrePill +
+        yearPill +
+        threeDPill +
+        libraryPill +
+        resCodecPill +
+        networkPill +
+        audioCodecPill +
+        pagePill +
+        userPill +
+        devicePill +
+        ipPill +
+        episodePill +
+        endTimePill +
+        castPill +
+        directorPill +
+        authorPill +
+        albumArtistPill;
+    } else {
+      tagDetailsHtml =
+        contentRatingPill +
+        resCodecPill +
+        networkPill +
+        studioPill +
+        libraryPill +
+        audioCodecPill +
+        runTimePill +
+        pagePill +
+        ratingPill +
+        userPill +
+        devicePill +
+        ipPill +
+        yearPill +
+        genrePill +
+        threeDPill +
+        episodePill +
+        endTimePill +
+        castPill +
+        directorPill +
+        authorPill +
+        albumArtistPill;
     }
 
     // render data into html
@@ -568,23 +758,7 @@ class MediaCard {
       displayedTagLine +
       `</div></marquee>
         <div class="tagDetails">` +
-      contentRatingPill +
-      resCodecPill +
-      networkPill +
-      studioPill +
-      audioCodecPill +
-      runTimePill +
-      pagePill +
-      ratingPill +
-      userPill +
-      devicePill + 
-      ipPill +
-      yearPill +
-      endTimePill +
-      castPill +
-      directorPill +
-      authorPill +
-      albumArtistPill +
+      tagDetailsHtml +
       `</div>
       </div>
       </div>

@@ -2,33 +2,22 @@
 ## Media display software for Plex, Jellyfin, Emby, Kodi, Sonarr, Radarr, and Readarr. (Just like the display screens in movie theatre foyers)
 
 > **About this repository**  
-> This is an **AI-assisted, modified** version of [Posterr](https://github.com/petersem/posterr). The **original developer(s) and the upstream project did the real work**—design, architecture, and years of maintenance. This tree is intentionally a **test / sandbox app** for another developer to practice extending Posterr-style features and to learn how to do that **the right way** (clear changes, tests, and eventual contribution back to the real project if desired). For production use, prefer **[upstream Posterr](https://github.com/petersem/posterr)**.
+> This is an **AI-assisted fork** of [Posterr](https://github.com/petersem/posterr) by **binarygeek119**. Upstream owns the original design and core product; this repo adds the features in **New in this fork** below.  
+> **Source:** [github.com/binarygeek119/posterr](https://github.com/binarygeek119/posterr) · **Docker image:** [`binarygeek119/postarr`](https://hub.docker.com/r/binarygeek119/postarr) (`:latest`)
 
-my modded docker image
-https://hub.docker.com/r/binarygeek119/postarr
-binarygeek119/postarr:latest
-
-
-
-![Docker Pulls](https://img.shields.io/docker/pulls/petersem/posterr) 
-![Docker Image Size (tag)](https://img.shields.io/docker/image-size/petersem/posterr/latest?logo=docker) 
-![GitHub Stars](https://img.shields.io/github/stars/petersem/posterr?style=flat)
-![Version](https://img.shields.io/github/package-json/v/petersem/posterr?logoColor=blue)
-![GitHub last commit](https://img.shields.io/github/last-commit/petersem/posterr)
+![GitHub stars](https://img.shields.io/github/stars/binarygeek119/posterr?style=flat)
+![Fork version](https://img.shields.io/github/package-json/v/binarygeek119/posterr?label=version&logoColor=blue)
+![Last commit](https://img.shields.io/github/last-commit/binarygeek119/posterr)
+![Docker Pulls](https://img.shields.io/docker/pulls/binarygeek119/postarr)
+![Docker image size](https://img.shields.io/docker/image-size/binarygeek119/postarr/latest?logo=docker)
 ![Platforms](https://img.shields.io/badge/platform-docker-blue)
-[![User Guide](https://img.shields.io/badge/user_guide-wiki-informational?logo=github)](https://github.com/petersem/posterr/wiki/Posterr-Configuration)
+[![Upstream wiki](https://img.shields.io/badge/upstream-wiki-informational?logo=github)](https://github.com/petersem/posterr/wiki/Posterr-Configuration)
 
 ![Slides](https://github.com/petersem/posterr/blob/master/doco/posterr.jpg?raw=true)
 ![Awtrix](https://github.com/petersem/posterr/blob/master/doco/awtrix.gif?raw=true)
 
-- Check [Here](https://github.com/petersem/posterr/wiki/Latest-changes) for the latest updates
-- Visit the [wiki](https://github.com/petersem/posterr/wiki/Known-Issues) for more information on known issues.
-- Visit the [Discord Group](https://discord.gg/TcnEkMEf9J) for discussions and limited support.
-- **The default password is:** raidisnotabackup
+**Documentation and community (upstream):** [Latest changes](https://github.com/petersem/posterr/wiki/Latest-changes) · [Known issues](https://github.com/petersem/posterr/wiki/Known-Issues) · [Discord](https://discord.gg/TcnEkMEf9J) (limited support). **Default settings password:** `raidisnotabackup`
 
- > **IMPORTANT NOTE ON UPGRADES**
- > - There are rare times that you will need to update settings. Check [here](https://github.com/petersem/posterr/wiki/Latest-changes) for detailed notes on each updated.
- 
 ---
 ## Features
  - Displays movies, shows, music poster for what's currently playing.
@@ -48,10 +37,22 @@ binarygeek119/postarr:latest
  - Trivia Quiz (multiple selectable topics)
  - Support LED Matrix displays running Awtrix software
  - Display custom web pages as slides (if web page compatible) - **EXPERIMENTAL!**
- - Rotate display -90° (for running on display devices, like Firesticks, which do not support portait rotation)
+ - Rotate display -90° (for running on display devices, like Firesticks, which do not support portrait rotation)
  - Post API (at '/api/sleep') to toggle sleep mode. (Pass in header values `'psw: your Posterr password'` and `'sleep: true|false'`)
  - Get API at the same endpoint will return the sleep status without any parsed parameters.
- - Supports `CEC` control of monitor inconjunction with the Posterr `Sleep Timer`. 
+ - Supports `CEC` control of a monitor together with the Posterr sleep timer.
+ - **TMDB “Now Showing”** list with dedicated **`/now-showing`** view, optional main-poster slides, showtimes, and library fill-in — details under **Display controls (this modified branch)** below.
+
+### New in this fork (recent)
+These are additions on top of upstream behaviour (current fork **`package.json`** version is **2.0.0**).
+
+| Area | What changed |
+|------|----------------|
+| **Release notice** | After an upgrade, a **red banner** on the **home poster view**, **`/now-showing`**, and **settings** pages reminds you that new features shipped. It clears after you open **Settings** and click **Acknowledge there are new features**. Your choice is stored in `settings.json` (`newFeaturesAcknowledgedVersion`); the banner comes back when the app **version string** in `package.json` changes again (any **X.Y.Z** bump). |
+| **Settings → About** | Shows that this build is a **binarygeek119** fork, **purely AI-modified**, with a link to **[github.com/binarygeek119/posterr](https://github.com/binarygeek119/posterr)**. Original author credits and upstream links stay in the same tab. |
+| **Settings navigation** | **Sync**, **Cache**, **Now Showing**, and **TMDB API** pages use the **same sidebar and mobile icons** as each other, including **Debug** and **About**, so entries no longer disappear when you switch pages. |
+| **Ads (main deck + `/settings/ads`)** | When **Enabled**, ad slides rotate with the home posters (**every *n* posters**, optional **only show ads**). Upload images, prices, and optional per-slide backgrounds; metadata in **`config/ads.db`**, files under **`config/ads`**. |
+| **Dedicated `/ads` view** | Full-screen ad slideshow: **seconds per ad** advances each slide; **seconds on full `/ads` page before returning home** is separate (`0` = manual leave; otherwise **30–86400** seconds then redirect to **`/`**). Optional backdrop from **`config/ads-view`** (`**/custom/ads-view/**`). |
 
 ### Display controls (this modified branch)
  - Per-media poster toggles:
@@ -67,15 +68,24 @@ binarygeek119/postarr:latest
    - Display artist portrait
  - Featured portrait modes can render a person/artist image as the main poster, show their name in the top banner, and show up to 5 related credits in the bottom line when metadata is available.
  - Now Screening/Now Playing support includes music and audiobooks (in addition to movies/TV) for supported servers.
+ - **Dedicated Now Showing view (`/now-showing`):** TMDB-backed list with **auto showtimes** spaced by **feature runtime + 10 minutes** between each listed time (manual times unchanged when you choose “manual” per title). Optional **library fillers** sample the same on-demand title pool as poster slides; fillers are excluded when they match a curated title (by normalized name).
+ - **Settings → Ads:** enable ads, spacing (**every *n* posters**), **only show ads**, currency, title outline on `/ads`, **seconds per ad** on `/ads` (slide rotation), **seconds on the full `/ads` page before returning home** (separate timer; returns to home posters at **`/`** when non-zero). Manage slides and optional per-slide backgrounds on **`/settings/ads`**; open the dedicated view at **`/ads`**.
+ - **Settings layout:** **Now Playing (media server)** and **Now Showing (main poster)** sections are ordered with **Now Playing first** in the accordion and related settings shortcuts.
+ - **Poster / library sync:** manual **full sync** and **abort** from **Settings → Sync**; optional **About sync** modal. Jellyfin/Emby library paging: optional env **`POSTERR_JELLYFIN_LIBRARY_PAGE_LIMIT`** (integer **50–500**, default **300**) for items per request during large library walks.
+
+### Free community custom posters
+Community-sourced, open-use custom poster images for Posterr (and similar apps) live in **[binarygeek119/open-custom-posters](https://github.com/binarygeek119/open-custom-posters)**. Use them in your **`public/custom`** / Docker **`custom`** picture themes; open an issue to request more, or submit a pull request with your art in a folder named for your GitHub username. Discord: [open-custom-posters](https://discord.gg/AEhVjqX4Af).
+
 ---
 ## Prerequisites
 ### Mandatory
  - Plex, Jellyfin, Emby, or Kodi (settings → server type; Kodi needs HTTP JSON-RPC enabled)
 
 ### Optional
- - Sonarr v3.0
- - Radarr v4.3
- - Readarr v0.1.3
+ - Sonarr
+ - Radarr
+ - Readarr (or Chaptarr-compatible book stack)
+ - **TMDB API key** (for Now Showing movie search, list, and artwork) — set in **Settings → TMDB API** or **`TMDB_API_KEY`** environment variable
 ---
 
 ## Installation
@@ -87,8 +97,6 @@ Create the following directories in your docker folder:
  - ./docker/posterr/custom
 
 ```yaml
-version: "3.8"
-
 services:
   posterr:
     image: binarygeek119/postarr:latest
@@ -99,7 +107,6 @@ services:
     volumes:
       - ./docker/posterr/config:/usr/src/app/config
       - ./docker/posterr/custom:/usr/src/app/public/custom
-      - ./docker/posterr/saved:/usr/src/app/saved
     ports:
       - 9876:3000
     restart: unless-stopped
@@ -115,7 +122,10 @@ The **`config`** volume is required not only for **`settings.json`**, but also f
 | Path (inside container) | Purpose |
 |-------------------------|---------|
 | `config/settings.json` | Posterr settings |
-| `config/cache/posterr-poster-metadata.db` | Poster / library sync metadata (SQLite) |
+| `config/posterr-poster-metadata.db` | Poster / library sync metadata (SQLite) |
+| `config/now-showing.db` | TMDB **Now Showing** movie list (dedicated `/now-showing` screen and optional main-poster slides) |
+| `config/ads.db` | **Ads** slide list (titles, prices, paths) for **`/ads`** and the main poster deck |
+| `config/ads/` · `config/ads-view/` | Uploaded **ad images** and optional **full-page `/ads` backdrop** (served as **`/custom/ads/`** and **`/custom/ads-view/`**) |
 | `config/cache/imagecache/` | Downloaded posters, fan art, and related images |
 | `config/cache/mp3cache/` | Cached TV/movie theme MP3s |
 | `config/cache/randomthemes/` | Optional random theme storage |
@@ -155,7 +165,7 @@ docker run -d --name posterr \
 -e TZ=Australia/Brisbane \
 --add-host=host.docker.internal:host-gateway \
 --restart=always \
-petersem/posterr
+binarygeek119/postarr:latest
 ```
 
 On **Docker Engine 20.10+**, `--add-host=host.docker.internal:host-gateway` lets Posterr reach Plex/Jellyfin/Emby/Kodi running on the **host** (Linux). Omit if you only use container-to-container names on a custom network.
@@ -165,13 +175,13 @@ On **Docker Engine 20.10+**, `--add-host=host.docker.internal:host-gateway` lets
 |--|--|
 |TZ|Your local timezone. Go to [wikipedia](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) and use the `TZ Database Name` value.|
 |/docker/posterr/config → `/usr/src/app/config`|**Required.** Holds `settings.json` **and** the **`cache/`** subtree (poster SQLite DB, `imagecache/`, `mp3cache/`). Use a persistent host directory so nothing is lost on container recreate.|
-|/docker/posterr/custom|This is required for custom pictures (and other custom media in the future)|
+|/docker/posterr/custom|Mount for **custom picture** themes under `public/custom` (omit if you do not use them)|
 |Ports|Change first part to a different port if needed. e.g. 9876:3000|
-|BASEPATH|_"/path"_ Use this for reverse proxy setups which require a base path value. **This line can be left out, or value left blank** if you dont use alternate paths. |
+|BASEPATH|`"/your-prefix"` for reverse proxies that serve Posterr under a subpath. Omit or leave empty if unused.|
 |extra_hosts `host.docker.internal`|Helps Posterr reach **Jellyfin, Emby, Kodi, or Plex on the Docker host** from inside the container (Linux). Requires Docker Engine **20.10+**. |
 
 ### <ins>Unraid</ins>
- - Use the Posterr template in community apps. (Being replaced with new version)
+ - Install via **Docker** using the Compose or `docker run` examples above, or a Community Applications template if one matches this image.
 
 ---
 ## CEC Control script installation **(rPi only)**
@@ -179,9 +189,9 @@ On **Docker Engine 20.10+**, `--add-host=host.docker.internal:host-gateway` lets
 
 ---
 ## Updates
- - From v1.10.1, there will be a notice at the top of the settings screen informing you if you are running an old version. 
- - Use containrr/watchtower to auto-update Posterr in Docker environments
- - Update in the usual way for Unraid
+ - **Settings** may show an **update available** notice when Posterr’s remote version check reports a **newer version** than this install (see startup logs / settings UI).
+ - **This fork:** after upgrading to a new **app version**, a **red “new features”** banner appears until **Settings → Acknowledge there are new features** (see **New in this fork**).
+ - Optional: [Watchtower](https://containrrr.dev/watchtower/) or your stack’s policy for container updates.
 
 ---
 ## Setup
@@ -192,6 +202,10 @@ Get to the settings page in a number of ways:
  - If on the 'no content' page, then click this text
 
 *The default password is:* **raidisnotabackup**
+
+**Now Showing (this fork):** configure the TMDB movie list at **`/settings/now-showing`** (also linked from **Settings**). The public-style schedule view is at **`/now-showing`** (prefix with `BASEPATH` if you use a reverse-proxy base path). Set a TMDB API key in **Settings → TMDB API** or the **`TMDB_API_KEY`** environment variable.
+
+**Ads (this fork):** configure slides and timings at **`/settings/ads`**. The dedicated slideshow is at **`/ads`**; use **seconds per ad** for each slide and **seconds on full `/ads` page before returning home** to auto-navigate back to the home poster view when you want a timed lobby loop.
 
 ---
 ## Possible Uses
@@ -215,16 +229,13 @@ Get to the settings page in a number of ways:
  > Please see the [Posterr Wiki](https://github.com/petersem/posterr/wiki/Posterr-Configuration) for more information.
 
 ---
-## Star History
-[![Star History Chart](https://api.star-history.com/svg?repos=petersem/posterr,petersem/monocker,petersem/dockerholics,petersem/exportarr&type=Date)](https://star-history.com/#petersem/posterr&petersem/monocker&petersem/dockerholics&petersem/exportarr&Date)
----
 ## Troubleshooting
 Should you encounter a problem, the solution may be listed [HERE](https://github.com/petersem/posterr/wiki/Troubleshooting).
 
 ---
 ## Support
- - There is no _'official'_ support for this product, however should you encounter issues, raise an issue on the github page.
- - Limited support in [Discord](https://discord.gg/TcnEkMEf9J)
+ - **This fork:** open an issue on [binarygeek119/posterr](https://github.com/binarygeek119/posterr/issues).
+ - **Upstream Posterr:** [Discord](https://discord.gg/TcnEkMEf9J) (limited); issues on [petersem/posterr](https://github.com/petersem/posterr/issues) for vanilla Posterr.
 
 ---
 ### Support my efforts and continued development 
@@ -253,7 +264,7 @@ Posterr uses the following:
 
 ---
 ## Notice
-> Posterr is dependant on third party applications and services. Some features may fail temporarily or permenantly if the dependancies are unavailable, or become incompatible for any technical or legal reason. This software comes with no warranty or guarantee of any kind. Images and themes that you download through Posterr may be copyrighted, and are the property of the respective copyright holders.
+> Posterr depends on third-party applications and services. Some features may fail temporarily or permanently if those dependencies are unavailable or become incompatible. This software comes with no warranty. Images and themes you download may be copyrighted by their respective owners.
 
 ---
 ## License

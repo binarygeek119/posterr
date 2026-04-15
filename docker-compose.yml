@@ -2,8 +2,8 @@
 # Jellyfin / Emby / Kodi / Plex are reached over HTTP from Posterr settings (no extra container packages).
 #
 # Volumes:
-#   config/  — settings.json and other config (required to keep setup across restarts).
-#   config/  — settings.json + cache/ (poster DB, imagecache, mp3cache). Mount the whole config dir.
+#   config/ — settings.json, cache/, ads/, ads-view/, custom-pictures/, SQLite DBs (mount whole config dir).
+#   Optional: public/custom — legacy uploads; on first run Posterr copies into config/ if those folders are empty.
 
 version: "3.8"
 
@@ -20,8 +20,9 @@ services:
       BASEPATH: ""
       ET: "false"
     volumes:
-      - ~/docker/posterr/custom:/usr/src/app/public/custom
       - ~/docker/posterr/config:/usr/src/app/config
+      # Legacy only — omit if unused; one-time migration copies into config/ when config ads/pictures are empty
+      - ~/docker/posterr/custom:/usr/src/app/public/custom
     ports:
       - 9876:3000
     restart: unless-stopped

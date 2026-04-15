@@ -4,7 +4,14 @@ const mediaCard = require("./../cards/MediaCard");
 const cType = require("./../cards/CardType");
 const util = require("./../core/utility");
 const core = require("./../core/cache");
+const tmdbBackdropFallback = require("./../core/tmdbBackdropFallback");
 const posterSyncLib = require("./../core/posterSyncProgress");
+const posterSyncRetry = require("./../core/posterSyncRetry");
+const posterMetadataDb = require("./../core/posterMetadataDb");
+const {
+  PosterSyncAbortedError,
+  checkPosterSyncAborted,
+} = require("./../core/posterSyncAbort");
 const { CardTypeEnum } = require("./../cards/CardType");
 const EmbyJellyfinBase = require("./embyJellyfinBase");
 const POSTER_SYNC_BATCH_SIZE = 100;
@@ -102,6 +109,23 @@ class Kodi {
   fanartFromItem(it) {
     if (!it || !it.art) return null;
     return it.art.fanart || it.fanart || null;
+  }
+
+  bannerFromItem(it) {
+    if (!it || !it.art) return null;
+    return it.art.banner || it.banner || null;
+  }
+
+  /** Kodi clearlogo / clearart (title treatment) for cache as *-logo.png */
+  clearlogoFromItem(it) {
+    if (!it || !it.art) return null;
+    return (
+      it.art.clearlogo ||
+      it.clearlogo ||
+      it.art.clearart ||
+      it.clearart ||
+      null
+    );
   }
 
   static timeToSeconds(t) {
@@ -447,6 +471,8 @@ class Kodi {
       "file",
       "art",
       "dateadded",
+      "imdbnumber",
+      "uniqueid",
     ];
     const lim = limits || { start: 0, end: 20000 };
     try {
@@ -485,6 +511,8 @@ class Kodi {
       "art",
       "studio",
       "dateadded",
+      "imdbnumber",
+      "uniqueid",
     ];
     const lim = limits || { start: 0, end: 20000 };
     try {
@@ -687,7 +715,9 @@ class Kodi {
       sp.total = 0;
     }
     const effHasArt = posterSyncFull ? "true" : hasArt;
+    const metadataOnlySync = posterSyncFull && opts && opts.metadataOnlySync === true;
     const pullBackground = effHasArt === "true" && imagePull.background !== false;
+    const pullLogo = effHasArt === "true" && imagePull.logo !== false;
     const pullVideoPoster = imagePull.videoPoster !== false;
 
     let odCards = [];
@@ -802,6 +832,28 @@ class Kodi {
       return odCards;
     }
 
+    if (
+      posterSyncFull &&
+      opts &&
+      Array.isArray(opts.retryLibraryKeysFromLastSync) &&
+      opts.retryLibraryKeysFromLastSync.length &&
+      odRaw &&
+      odRaw.length > 0
+    ) {
+      odRaw = posterSyncRetry.prioritizeOdRaw(
+        odRaw,
+        opts.retryLibraryKeysFromLastSync,
+        "kodi"
+      );
+      const nowK = new Date();
+      console.log(
+        nowK.toLocaleString() +
+          " [poster sync] Kodi — prioritizing " +
+          opts.retryLibraryKeysFromLastSync.length +
+          " id(s) from last sync (missing images/metadata)"
+      );
+    }
+
     if (posterSyncFull && sp) {
       sp.total = odRaw.length;
       sp.phase = "caching";
@@ -840,8 +892,14 @@ class Kodi {
         )
       : [odRaw];
     const totalBatches = odBatches.length;
+    const retrySet =
+      posterSyncFull &&
+      opts &&
+      Array.isArray(opts.retryLibraryKeysFromLastSync)
+        ? new Set(opts.retryLibraryKeysFromLastSync.map((k) => String(k)))
+        : null;
 
-    for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
+    syncBatches: for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
       const batch = odBatches[batchIdx];
       if (posterSyncFull && sp) {
         sp.label =
@@ -860,13 +918,45 @@ class Kodi {
             " items)"
         );
       }
+      try {
+        checkPosterSyncAborted(opts, posterSyncFull, sp);
+      } catch (e) {
+        if (e instanceof PosterSyncAbortedError) {
+          break syncBatches;
+        }
+        throw e;
+      }
       for (const md of batch) {
+      if (posterSyncFull) {
+        const rawApiId =
+          md && md._kodiKind === "show" && md.tvshowid != null
+            ? "s:" + String(md.tvshowid)
+            : md && md._kodiKind === "movie" && md.movieid != null
+              ? "m:" + String(md.movieid)
+              : "";
+        const sourceUpdatedAt =
+          (md && md.lastmodified) ||
+          (md && md.dateadded) ||
+          (md && md.dateAdded) ||
+          "";
+        const mustRetry = !!(retrySet && rawApiId && retrySet.has(rawApiId));
+        if (
+          rawApiId &&
+          !mustRetry &&
+          posterMetadataDb.shouldSkipSyncItem("kodi", rawApiId, sourceUpdatedAt)
+        ) {
+          if (sp) {
+            sp.processed = Math.min(sp.total || 0, (sp.processed || 0) + 1);
+          }
+          continue;
+        }
+      }
       const medCard = new mediaCard();
       medCard.posterLibraryLabel = String(md._kodiLabel || "").trim();
       const kind = md._kodiKind;
 
       if (kind === "show") {
-        medCard.tagLine = md.title || "";
+        medCard.tagLine = await util.emptyIfNull(md.tagline || md.plotoutline);
         const id = md.tvshowid != null ? md.tvshowid : md.title;
         const mediaId = String(id).replace(/[^a-zA-Z0-9]/g, "");
         medCard.DBID = mediaId;
@@ -887,16 +977,58 @@ class Kodi {
             await core.CacheImage(url, fileName);
           }
           medCard.posterURL = "/imagecache/" + fileName;
+        } else if (metadataOnlySync && posterVfs) {
+          const url = this.vfsImageUrl(posterVfs);
+          if (url) medCard.posterDownloadURL = url;
+          medCard.posterURL = "/imagecache/" + fileName;
         } else if (!pullVideoPoster) {
           medCard.posterURL = "/images/no-poster-available.png";
         }
         if (pullBackground) {
+          let kodiShowBannerOk = false;
           const fan = this.fanartFromItem(md);
           if (fan) {
             const artName = `kodi-show-${mediaId}-art.jpg`;
             try {
               await core.CacheImage(this.vfsImageUrl(fan), artName);
               medCard.posterArtURL = "/imagecache/" + artName;
+            } catch (e) {
+              /* optional */
+            }
+          }
+          const ban = this.bannerFromItem(md);
+          if (ban) {
+            const bnName = `kodi-show-${mediaId}-banner.jpg`;
+            try {
+              await core.CacheImage(this.vfsImageUrl(ban), bnName);
+              kodiShowBannerOk = true;
+              if (!medCard.posterArtURL) {
+                medCard.posterArtURL = "/imagecache/" + bnName;
+              }
+            } catch (e) {
+              /* optional */
+            }
+          }
+          await tmdbBackdropFallback.cacheTmdbBannerIfNeeded({
+            tmdbApiKey: opts && opts.tmdbApiKey,
+            pullBackground,
+            serverBannerOk: kodiShowBannerOk,
+            mediaType: "show",
+            title: md.title,
+            year: md.year,
+            ...tmdbBackdropFallback.collectKodiExternalIds(md),
+            bannerFileName: `kodi-show-${mediaId}-banner.jpg`,
+            medCard,
+            cacheImage: (u, f) => core.CacheImage(u, f),
+          });
+        }
+        if (pullLogo) {
+          const cl = this.clearlogoFromItem(md);
+          if (cl) {
+            const logoName = `kodi-show-${mediaId}-logo.png`;
+            try {
+              await core.CacheImage(this.vfsImageUrl(cl), logoName);
+              medCard.posterLogoURL = "/imagecache/" + logoName;
             } catch (e) {
               /* optional */
             }
@@ -918,16 +1050,58 @@ class Kodi {
             await core.CacheImage(url, movieFileName);
           }
           medCard.posterURL = "/imagecache/" + movieFileName;
+        } else if (metadataOnlySync && posterVfs) {
+          const url = this.vfsImageUrl(posterVfs);
+          if (url) medCard.posterDownloadURL = url;
+          medCard.posterURL = "/imagecache/" + movieFileName;
         } else if (!pullVideoPoster) {
           medCard.posterURL = "/images/no-poster-available.png";
         }
         if (pullBackground) {
+          let kodiMovieBannerOk = false;
           const fan = this.fanartFromItem(md);
           if (fan) {
             const artName = movieFileName.replace(/\.jpg$/, "-art.jpg");
             try {
               await core.CacheImage(this.vfsImageUrl(fan), artName);
               medCard.posterArtURL = "/imagecache/" + artName;
+            } catch (e) {
+              /* optional */
+            }
+          }
+          const ban = this.bannerFromItem(md);
+          const movieBnName = movieFileName.replace(/\.jpg$/, "-banner.jpg");
+          if (ban) {
+            try {
+              await core.CacheImage(this.vfsImageUrl(ban), movieBnName);
+              kodiMovieBannerOk = true;
+              if (!medCard.posterArtURL) {
+                medCard.posterArtURL = "/imagecache/" + movieBnName;
+              }
+            } catch (e) {
+              /* optional */
+            }
+          }
+          await tmdbBackdropFallback.cacheTmdbBannerIfNeeded({
+            tmdbApiKey: opts && opts.tmdbApiKey,
+            pullBackground,
+            serverBannerOk: kodiMovieBannerOk,
+            mediaType: "movie",
+            title: md.title,
+            year: md.year,
+            ...tmdbBackdropFallback.collectKodiExternalIds(md),
+            bannerFileName: movieBnName,
+            medCard,
+            cacheImage: (u, f) => core.CacheImage(u, f),
+          });
+        }
+        if (pullLogo) {
+          const cl = this.clearlogoFromItem(md);
+          if (cl) {
+            const logoName = movieFileName.replace(/\.jpg$/i, "") + "-logo.png";
+            try {
+              await core.CacheImage(this.vfsImageUrl(cl), logoName);
+              medCard.posterLogoURL = "/imagecache/" + logoName;
             } catch (e) {
               /* optional */
             }
@@ -940,7 +1114,7 @@ class Kodi {
           md.runtime != null ? Math.round(md.runtime / 60) : 0;
         medCard.resCodec = "";
         medCard.audioCodec = "";
-        medCard.tagLine = medCard.title;
+        medCard.tagLine = await util.emptyIfNull(md.tagline || md.plotoutline);
         const ratingVal = parseFloat(md.rating);
         medCard.rating =
           !isNaN(ratingVal) && ratingVal > 0
@@ -982,7 +1156,7 @@ class Kodi {
 
       odCards.push(medCard);
       if (sp) {
-        sp.processed = odCards.length;
+        sp.processed = Math.min(sp.total || 0, (sp.processed || 0) + 1);
       }
       if (posterSyncFull && sp && sp.libraries) {
         const lr = posterSyncLib.findLibraryRow(
@@ -1018,6 +1192,14 @@ class Kodi {
           );
         }
       }
+        try {
+          checkPosterSyncAborted(opts, posterSyncFull, sp);
+        } catch (e) {
+          if (e instanceof PosterSyncAbortedError) {
+            break syncBatches;
+          }
+          throw e;
+        }
       }
     }
 
@@ -1031,7 +1213,12 @@ class Kodi {
           odCards.length +
           " item(s) from (" +
           onDemandLibraries +
-          ")"
+          ")" +
+          (opts &&
+          typeof opts.posterSyncAbortCheck === "function" &&
+          opts.posterSyncAbortCheck()
+            ? " (aborted)"
+            : "")
       );
     } else {
       console.log(

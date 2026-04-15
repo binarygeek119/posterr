@@ -1,5 +1,5 @@
 # Debug compose — same host-gateway helper as docker-compose.yml for media servers on the host.
-# Bind-mount config (includes cache/) like production so poster sync and settings survive container rebuilds.
+# Bind-mount config (cache/, ads/, ads-view/, DBs, settings) like production so data survives rebuilds.
 
 version: "3.8"
 

@@ -56,38 +56,34 @@ class globalPage {
     displayPosterArtist
   ) {
     if (this.cards.length != 0) {
-      let webID = 0;
-      // move through cards and update ID's and active, then render
-      await this.cards.reduce(async (memo, card) => {
-        await memo;
-        webID++;
-        card.ID = webID;
-        // set first card to be active for web carousel
-        if (card.ID == 1) {
-          card.active = "active";
-        } else {
-          card.active = "";
-        }
-       // console.log(card);
-        await card.Render(
-          hasArt,
-          baseUrl,
-          hideTitle,
-          hideFooter,
-          showCast,
-          showDirectors,
-          showAuthors,
-          showAlbumArtist,
-          displayPosterAlbum,
-          displayPosterVideo,
-          displayPosterBooks,
-          displayPosterActor,
-          displayPosterActress,
-          displayPosterDirector,
-          displayPosterAuthor,
-          displayPosterArtist
-        );
-      }, undefined);
+      for (let i = 0; i < this.cards.length; i++) {
+        const card = this.cards[i];
+        card.ID = i + 1;
+        card.active = i === 0 ? "active" : "";
+      }
+      // Parallel render: each card builds its own HTML; order is already fixed by ID.
+      await Promise.all(
+        this.cards.map((card) =>
+          card.Render(
+            hasArt,
+            baseUrl,
+            hideTitle,
+            hideFooter,
+            showCast,
+            showDirectors,
+            showAuthors,
+            showAlbumArtist,
+            displayPosterAlbum,
+            displayPosterVideo,
+            displayPosterBooks,
+            displayPosterActor,
+            displayPosterActress,
+            displayPosterDirector,
+            displayPosterAuthor,
+            displayPosterArtist
+          )
+        )
+      );
     }
     return;
   }

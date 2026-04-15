@@ -122,6 +122,7 @@ function startInactivityCheck(element, delay, callbackInactivity, callbackActive
   var connCheckClock;
   var connOk = true;
   var sleeping = false;
+  var nowShowingCycleTimer = null;
   var counter;
   var curPlayID = 1;
   var pauseDetect = false;
@@ -397,6 +398,14 @@ function startInactivityCheck(element, delay, callbackInactivity, callbackActive
     // initial load of cards and connection check timer every 5 seconds
     setInterval(connCheck,5000);
     getCards();
+    var nsCycleEnabled = <%- JSON.stringify(String(typeof nowShowingPageCycleEnabled !== "undefined" ? nowShowingPageCycleEnabled : "false")) %> === "true";
+    var nsCycleEveryMins = parseInt(<%- JSON.stringify(String(typeof nowShowingPageCycleEveryMins !== "undefined" ? nowShowingPageCycleEveryMins : "30")) %>, 10);
+    if (nsCycleEnabled && Number.isFinite(nsCycleEveryMins) && nsCycleEveryMins > 0) {
+      var ms = nsCycleEveryMins * 60 * 1000;
+      nowShowingCycleTimer = setTimeout(function () {
+        window.location.href = "<%=baseUrl%>/now-showing";
+      }, ms);
+    }
   });
 
   async function sleep(ms) {

@@ -3,11 +3,58 @@ const mediaCard = require("./../cards/MediaCard");
 const cType = require("./../cards/CardType");
 const util = require("./../core/utility");
 const core = require("./../core/cache");
+const tmdbBackdropFallback = require("./../core/tmdbBackdropFallback");
 const posterSyncLib = require("./../core/posterSyncProgress");
+const posterSyncRetry = require("./../core/posterSyncRetry");
+const posterMetadataDb = require("./../core/posterMetadataDb");
+const {
+  PosterSyncAbortedError,
+  checkPosterSyncAborted,
+} = require("./../core/posterSyncAbort");
 const { CardTypeEnum } = require("./../cards/CardType");
 const { error } = require("jquery");
 const POSTER_SYNC_BATCH_SIZE = 100;
 // const sizeOf = require("image-size");
+
+/** Plex clear logo path from metadata field or Image[] (provider clearLogo). */
+function plexClearLogoPathFromMetadata(md) {
+  if (!md) return "";
+  const d = md.clearLogo || md.clearlogo;
+  if (d && String(d).trim()) return String(d).trim();
+  const arr = md.Image || md.image;
+  if (!Array.isArray(arr)) return "";
+  for (const im of arr) {
+    if (!im) continue;
+    const typ = String(im.type || im.Type || "").toLowerCase();
+    if (typ !== "clearlogo") continue;
+    const u = im.url || im.URL || im.path || im.Path || "";
+    if (u) return String(u).trim();
+  }
+  return "";
+}
+
+/**
+ * Download Plex clear logo into imagecache as `{idForFile}-logo.png`.
+ */
+async function plexCacheClearLogo(core, self, md, idForFile, medCard) {
+  const rel = plexClearLogoPathFromMetadata(md);
+  if (!rel || !idForFile) return;
+  const logoFile = `${idForFile}-logo.png`;
+  try {
+    let fetchUrl;
+    if (/^https?:\/\//i.test(rel)) {
+      fetchUrl = rel;
+    } else {
+      const pre = self.https ? "https://" : "http://";
+      const sep = rel.includes("?") ? "&" : "?";
+      fetchUrl = `${pre}${self.plexIP}:${self.plexPort}${rel}${sep}X-Plex-Token=${self.plexToken}`;
+    }
+    await core.CacheImage(fetchUrl, logoFile);
+    medCard.posterLogoURL = "/imagecache/" + logoFile;
+  } catch (e) {
+    /* optional */
+  }
+}
 
 /**
  * @desc Used to communicate with Plex
@@ -480,6 +527,14 @@ class Plex {
         medCard.summary = md.summary;
         medCard.cast = util.formatCastFromPlexRole(md.Role);
         medCard.directors = util.formatDirectorsFromPlexDirector(md.Director);
+        {
+          const cp = String(medCard.cast || "")
+            .split(",")
+            .map((x) => x.trim())
+            .filter(Boolean);
+          medCard.actor1 = cp[0] || "";
+          medCard.actor2 = cp[1] || "";
+        }
         if (md.type === "track") {
           medCard.albumArtist = (md.grandparentTitle || "").trim();
         }
@@ -583,7 +638,9 @@ class Plex {
     const effPlayThemes = posterSyncFull ? "false" : playThemes;
     const effPlayGenenericThemes = posterSyncFull ? "false" : playGenenericThemes;
     const effHasArt = posterSyncFull ? "true" : hasArt;
+    const metadataOnlySync = posterSyncFull && opts && opts.metadataOnlySync === true;
     const pullBackground = effHasArt == "true" && imagePull.background !== false;
+    const pullLogo = effHasArt == "true" && imagePull.logo !== false;
     const pullVideoPoster = imagePull.videoPoster !== false;
     const pullAlbumPoster = imagePull.albumPoster !== false;
 
@@ -693,6 +750,28 @@ class Plex {
       }
     }
 
+    if (
+      posterSyncFull &&
+      opts &&
+      Array.isArray(opts.retryLibraryKeysFromLastSync) &&
+      opts.retryLibraryKeysFromLastSync.length &&
+      odRaw &&
+      odRaw.length > 0
+    ) {
+      odRaw = posterSyncRetry.prioritizeOdRaw(
+        odRaw,
+        opts.retryLibraryKeysFromLastSync,
+        "plex"
+      );
+      const nowP = new Date();
+      console.log(
+        nowP.toLocaleString() +
+          " [poster sync] Plex — prioritizing " +
+          opts.retryLibraryKeysFromLastSync.length +
+          " id(s) from last sync (missing images/metadata)"
+      );
+    }
+
     // reutrn an empty array if no results
     if (odRaw.length !== null && odRaw.length !== 0 && odRaw !== ",") {
       if (posterSyncFull && sp) {
@@ -732,6 +811,12 @@ class Plex {
           )
         : [odRaw];
       const totalBatches = odBatches.length;
+      const retrySet =
+        posterSyncFull &&
+        opts &&
+        Array.isArray(opts.retryLibraryKeysFromLastSync)
+          ? new Set(opts.retryLibraryKeysFromLastSync.map((k) => String(k)))
+          : null;
       // move through results and populate media cards
       for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
         const batch = odBatches[batchIdx];
@@ -752,13 +837,34 @@ class Plex {
               " items)"
           );
         }
+        try {
+        checkPosterSyncAborted(opts, posterSyncFull, sp);
         await batch.reduce(async (memo, md) => {
           await memo;
+        if (posterSyncFull) {
+          const rawApiId = String((md && md.ratingKey) || "").trim();
+          const sourceUpdatedAt =
+            (md && md.updatedAt) ||
+            (md && md.updated_at) ||
+            (md && md.addedAt) ||
+            "";
+          const mustRetry = !!(retrySet && rawApiId && retrySet.has(rawApiId));
+          if (
+            rawApiId &&
+            !mustRetry &&
+            posterMetadataDb.shouldSkipSyncItem("plex", rawApiId, sourceUpdatedAt)
+          ) {
+            if (sp) {
+              sp.processed = Math.min(sp.total || 0, (sp.processed || 0) + 1);
+            }
+            return;
+          }
+        }
         const medCard = new mediaCard();
         // modify inputs, based upon tv episode or movie result structure
         switch (md.type) {
           case "show":
-            medCard.tagLine = md.title;
+            medCard.tagLine = await util.emptyIfNull(md.tagline);
             let result = md.guid.split("/");
 
             // Use TVDB ID if available, otherwise use GUID
@@ -809,16 +915,19 @@ class Plex {
               "?X-Plex-Token=" +
               this.plexToken;
 
-            if (pullVideoPoster) {
+            if (pullVideoPoster && md.thumb) {
               medCard.posterDownloadURL = url;
               await core.CacheImage(url, fileName);
+              medCard.posterURL = "/imagecache/" + fileName;
+            } else if (metadataOnlySync && md.thumb) {
+              medCard.posterDownloadURL = url;
               medCard.posterURL = "/imagecache/" + fileName;
             } else {
               medCard.posterURL = "/images/no-poster-available.png";
             }
 
-            //download poster art
-            // check art exists
+            //download poster art + optional Plex banner (wide)
+            let showHasBackdrop = false;
             if (md.art !== undefined && pullBackground) {
               fileName = mediaId + "-art.jpg";
               if (this.https) prefix = "https://";
@@ -833,6 +942,44 @@ class Plex {
 
               await core.CacheImage(url, fileName);
               medCard.posterArtURL = "/imagecache/" + fileName;
+              showHasBackdrop = true;
+            }
+            let showServerBannerOk = false;
+            if (pullBackground && md.banner) {
+              fileName = mediaId + "-banner.jpg";
+              if (this.https) prefix = "https://";
+              url =
+                prefix +
+                this.plexIP +
+                ":" +
+                this.plexPort +
+                md.banner +
+                "?X-Plex-Token=" +
+                this.plexToken;
+              try {
+                await core.CacheImage(url, fileName);
+                showServerBannerOk = true;
+                if (!showHasBackdrop) {
+                  medCard.posterArtURL = "/imagecache/" + fileName;
+                }
+              } catch (e) {
+                /* optional */
+              }
+            }
+            await tmdbBackdropFallback.cacheTmdbBannerIfNeeded({
+              tmdbApiKey: opts && opts.tmdbApiKey,
+              pullBackground,
+              serverBannerOk: showServerBannerOk,
+              mediaType: "show",
+              title: md.title || md.grandparentTitle,
+              year: md.year,
+              ...tmdbBackdropFallback.collectPlexExternalIds(md),
+              bannerFileName: mediaId + "-banner.jpg",
+              medCard,
+              cacheImage: (u, f) => core.CacheImage(u, f),
+            });
+            if (pullLogo) {
+              await plexCacheClearLogo(core, this, md, mediaId, medCard);
             }
 
             medCard.posterAR = 1.47;
@@ -855,16 +1002,19 @@ class Plex {
               md.thumb +
               "?X-Plex-Token=" +
               this.plexToken;
-            if (pullVideoPoster) {
+            if (pullVideoPoster && md.thumb) {
               medCard.posterDownloadURL = movieUrl;
               await core.CacheImage(movieUrl, movieFileName);
+              medCard.posterURL = "/imagecache/" + movieFileName;
+            } else if (metadataOnlySync && md.thumb) {
+              medCard.posterDownloadURL = movieUrl;
               medCard.posterURL = "/imagecache/" + movieFileName;
             } else {
               medCard.posterURL = "/images/no-poster-available.png";
             }
 
-            //download poster
-            // check art exists
+            //download poster art + optional Plex banner (wide)
+            let movieHasBackdrop = false;
             if (md.art !== undefined && pullBackground) {
               movieFileName = md.ratingKey + "-art.jpg";
               if (this.https) moviePlexPrefix = "https://";
@@ -879,6 +1029,44 @@ class Plex {
 
               await core.CacheImage(movieUrl, movieFileName);
               medCard.posterArtURL = "/imagecache/" + movieFileName;
+              movieHasBackdrop = true;
+            }
+            let movieServerBannerOk = false;
+            if (pullBackground && md.banner) {
+              movieFileName = md.ratingKey + "-banner.jpg";
+              if (this.https) moviePlexPrefix = "https://";
+              movieUrl =
+                moviePlexPrefix +
+                this.plexIP +
+                ":" +
+                this.plexPort +
+                md.banner +
+                "?X-Plex-Token=" +
+                this.plexToken;
+              try {
+                await core.CacheImage(movieUrl, movieFileName);
+                movieServerBannerOk = true;
+                if (!movieHasBackdrop) {
+                  medCard.posterArtURL = "/imagecache/" + movieFileName;
+                }
+              } catch (e) {
+                /* optional */
+              }
+            }
+            await tmdbBackdropFallback.cacheTmdbBannerIfNeeded({
+              tmdbApiKey: opts && opts.tmdbApiKey,
+              pullBackground,
+              serverBannerOk: movieServerBannerOk,
+              mediaType: "movie",
+              title: md.title,
+              year: md.year,
+              ...tmdbBackdropFallback.collectPlexExternalIds(md),
+              bannerFileName: md.ratingKey + "-banner.jpg",
+              medCard,
+              cacheImage: (u, f) => core.CacheImage(u, f),
+            });
+            if (pullLogo) {
+              await plexCacheClearLogo(core, this, md, String(md.ratingKey), medCard);
             }
 
             // play movie theme or add generic random theme if applicable
@@ -948,13 +1136,17 @@ class Plex {
                 md.thumb +
                 "?X-Plex-Token=" +
                 this.plexToken;
-              if (pullAlbumPoster) {
+              if (pullAlbumPoster && md.thumb) {
                 medCard.posterDownloadURL = albImgUrl;
                 await core.CacheImage(albImgUrl, albPoster);
+                medCard.posterURL = "/imagecache/" + albPoster;
+              } else if (metadataOnlySync && md.thumb) {
+                medCard.posterDownloadURL = albImgUrl;
                 medCard.posterURL = "/imagecache/" + albPoster;
               } else {
                 medCard.posterURL = "/images/no-poster-available.png";
               }
+              let albHasBackdrop = false;
               if (md.art !== undefined && pullBackground) {
                 let albArtFile = md.ratingKey + "-art.jpg";
                 let albArtUrl =
@@ -967,6 +1159,7 @@ class Plex {
                   this.plexToken;
                 await core.CacheImage(albArtUrl, albArtFile);
                 medCard.posterArtURL = "/imagecache/" + albArtFile;
+                albHasBackdrop = true;
               } else if (md.grandparentArt !== undefined && pullBackground) {
                 let albArtFile = md.ratingKey + "-art.jpg";
                 let albArtUrl =
@@ -979,6 +1172,35 @@ class Plex {
                   this.plexToken;
                 await core.CacheImage(albArtUrl, albArtFile);
                 medCard.posterArtURL = "/imagecache/" + albArtFile;
+                albHasBackdrop = true;
+              }
+              if (pullBackground && md.banner) {
+                let albBnFile = md.ratingKey + "-banner.jpg";
+                let albBnUrl =
+                  albPre +
+                  this.plexIP +
+                  ":" +
+                  this.plexPort +
+                  md.banner +
+                  "?X-Plex-Token=" +
+                  this.plexToken;
+                try {
+                  await core.CacheImage(albBnUrl, albBnFile);
+                  if (!albHasBackdrop) {
+                    medCard.posterArtURL = "/imagecache/" + albBnFile;
+                  }
+                } catch (e) {
+                  /* optional */
+                }
+              }
+              if (pullLogo) {
+                await plexCacheClearLogo(
+                  core,
+                  this,
+                  md,
+                  String(md.ratingKey != null ? md.ratingKey : ""),
+                  medCard
+                );
               }
               medCard.posterAR = 1;
               medCard.title = md.title || "";
@@ -1070,6 +1292,14 @@ class Plex {
         medCard.summary = md.summary;
         medCard.cast = util.formatCastFromPlexRole(md.Role);
         medCard.directors = util.formatDirectorsFromPlexDirector(md.Director);
+        {
+          const cp = String(medCard.cast || "")
+            .split(",")
+            .map((x) => x.trim())
+            .filter(Boolean);
+          medCard.actor1 = cp[0] || "";
+          medCard.actor2 = cp[1] || "";
+        }
         await this.populatePlexPersonPosters(medCard, md, imagePull);
 
         // calculate for recently added (if set)
@@ -1082,7 +1312,7 @@ class Plex {
         // add media card to array
         odCards.push(medCard);
         if (sp) {
-          sp.processed = odCards.length;
+          sp.processed = Math.min(sp.total || 0, (sp.processed || 0) + 1);
         }
         if (posterSyncFull && sp && sp.libraries) {
           const lr = posterSyncLib.findLibraryRow(
@@ -1119,7 +1349,15 @@ class Plex {
           }
         }
 
+        checkPosterSyncAborted(opts, posterSyncFull, sp);
+
         }, undefined);
+        } catch (e) {
+          if (e instanceof PosterSyncAbortedError) {
+            break;
+          }
+          throw e;
+        }
       }
     }
     let now = new Date();
@@ -1132,7 +1370,12 @@ class Plex {
           odCards.length +
           " item(s) from (" +
           onDemandLibraries +
-          ")"
+          ")" +
+          (opts &&
+          typeof opts.posterSyncAbortCheck === "function" &&
+          opts.posterSyncAbortCheck()
+            ? " (aborted)"
+            : "")
       );
     } else {
       console.log(
