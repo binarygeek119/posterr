@@ -78,6 +78,15 @@
 
       function activateView(view) {
         activeView = view === "now-showing" || view === "ads" ? view : "posters";
+        if (activeView === "now-showing") {
+          ensureSrc(nowShowingFrame, nowShowingUrl);
+        } else if (activeView === "ads") {
+          ensureSrc(adsFrame, adsUrl);
+        } else {
+          /* Posters-only startup: unload dedicated views so nothing from /ads or /now-showing runs in the background. */
+          if (nowShowingFrame) nowShowingFrame.setAttribute("src", "about:blank");
+          if (adsFrame) adsFrame.setAttribute("src", "about:blank");
+        }
         postersFrame.classList.toggle("is-active", activeView === "posters");
         nowShowingFrame.classList.toggle("is-active", activeView === "now-showing");
         adsFrame.classList.toggle("is-active", activeView === "ads");
@@ -123,8 +132,8 @@
       var nowShowingUrl = baseUrl + "/now-showing?cycleEmbed=1";
       var adsUrl = baseUrl + "/ads?cycleEmbed=1&cycleStayMins=" + encodeURIComponent(String(Number.isFinite(nsCycleStayMins) && nsCycleStayMins > 0 ? nsCycleStayMins : 5));
       ensureSrc(postersFrame, postersUrl);
-      ensureSrc(nowShowingFrame, nowShowingUrl);
-      ensureSrc(adsFrame, adsUrl);
+      if (nowShowingFrame) nowShowingFrame.setAttribute("src", "about:blank");
+      if (adsFrame) adsFrame.setAttribute("src", "about:blank");
       activateView("posters");
       scheduleCycleOpen();
 
