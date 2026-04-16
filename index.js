@@ -1397,6 +1397,80 @@ function buildLibrarySlideDeckFromPosterCache() {
 }
 
 /**
+ * Render cached poster-library slides immediately so /getcards can respond before
+ * Now Playing / on-demand network work finishes (first paint on /posters).
+ */
+async function warmCachedPosterDeckEarlyIfPossible() {
+  if (!loadedSettings || !preferCachedPostersEnabled()) return;
+  if (!cachedPosterDbHasRows()) return;
+  const kind = getMediaServerKind(loadedSettings.mediaServerType);
+  const warmCount = Math.min(12, primaryCachedPosterSlideCount());
+  const cached = posterMetadata.buildFallbackMediaCards(warmCount, kind);
+  if (!cached.length) return;
+  globalPage.cards = cached.slice();
+  try {
+    await globalPage.OrderAndRenderCards(
+      BASEURL,
+      loadedSettings.hasArt,
+      loadedSettings.odHideTitle,
+      loadedSettings.odHideFooter,
+      loadedSettings.showCast !== undefined ? loadedSettings.showCast : "false",
+      loadedSettings.showDirectors !== undefined
+        ? loadedSettings.showDirectors
+        : "false",
+      loadedSettings.showAuthors !== undefined ? loadedSettings.showAuthors : "false",
+      loadedSettings.showAlbumArtist !== undefined
+        ? loadedSettings.showAlbumArtist
+        : "false",
+      loadedSettings.displayPosterAlbum !== undefined
+        ? loadedSettings.displayPosterAlbum
+        : "true",
+      loadedSettings.displayPosterVideo !== undefined
+        ? loadedSettings.displayPosterVideo
+        : "true",
+      loadedSettings.displayPosterBooks !== undefined
+        ? loadedSettings.displayPosterBooks
+        : "true",
+      loadedSettings.displayPosterActor !== undefined
+        ? loadedSettings.displayPosterActor
+        : "false",
+      loadedSettings.displayPosterActress !== undefined
+        ? loadedSettings.displayPosterActress
+        : "false",
+      loadedSettings.displayPosterDirector !== undefined
+        ? loadedSettings.displayPosterDirector
+        : "false",
+      loadedSettings.displayPosterAuthor !== undefined
+        ? loadedSettings.displayPosterAuthor
+        : "false",
+      loadedSettings.displayPosterArtist !== undefined
+        ? loadedSettings.displayPosterArtist
+        : "false"
+    );
+    globalPage.slideDuration = loadedSettings.slideDuration * 1000;
+    globalPage.playThemes = loadedSettings.playThemes;
+    globalPage.playGenericThemes = loadedSettings.genericThemes;
+    globalPage.fadeTransition =
+      loadedSettings.fade == "true" ? "carousel-fade" : "";
+    globalPage.custBrand = loadedSettings.custBrand;
+    globalPage.titleColour = loadedSettings.titleColour;
+    globalPage.footColour = loadedSettings.footColour;
+    globalPage.bgColour = loadedSettings.bgColour;
+    globalPage.hasArt = loadedSettings.hasArt;
+    globalPage.quizTime =
+      loadedSettings.triviaTimer !== undefined ? loadedSettings.triviaTimer : 15;
+    globalPage.hideSettingsLinks =
+      loadedSettings.hideSettingsLinks !== undefined
+        ? loadedSettings.hideSettingsLinks
+        : "false";
+    globalPage.rotate =
+      loadedSettings.rotate !== undefined ? loadedSettings.rotate : "false";
+  } catch (e) {
+    /* non-fatal: full deck build in loadNowScreening will retry */
+  }
+}
+
+/**
  * @desc Wrapper function to call now screening method.
  * @returns {Promise<object>} mediaCards array - results of now screening search
  */
@@ -3011,6 +3085,9 @@ async function startup(clearCache) {
   if (isReadarrEnabled) await loadReadarrComingSoon();
   if (isTriviaEnabled) await loadTrivia();
   if (isLinksEnabled) await loadLinks();
+
+  // First paint: serve cached poster-library HTML before Now Playing blocks on the media server.
+  await warmCachedPosterDeckEarlyIfPossible();
 
   // Build homepage deck before optional Awtrix (network) work so /getcards can serve cached posters sooner.
   await loadNowScreening();
