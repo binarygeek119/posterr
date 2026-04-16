@@ -1,9 +1,9 @@
 name: Build Docker image and then push to DockerHub
 on:
   push:
-    branches: [ testing ]
+    branches: [ testing, Testing ]
   pull_request:
-    branches: [ testing ]
+    branches: [ testing, Testing ]
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
