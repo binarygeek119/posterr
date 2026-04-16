@@ -139,6 +139,8 @@
       height: 100%;
       overflow-y: auto;
       scroll-behavior: auto;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-y;
       padding: 0.75rem 0 2rem;
       position: relative;
       z-index: 1;
@@ -585,8 +587,25 @@
     (function () {
       var nsCycleEnabled = <%- JSON.stringify(String(typeof nowShowingPageCycleEnabled !== "undefined" ? nowShowingPageCycleEnabled : "false")) %> === "true";
       var nsCycleStayMins = parseInt(<%- JSON.stringify(String(typeof nowShowingPageCycleStayMins !== "undefined" ? nowShowingPageCycleStayMins : "5")) %>, 10);
+      var settingsLinksHidden = <%- JSON.stringify(String(typeof hideSettingsLinks !== "undefined" ? hideSettingsLinks : "false")) %> === "true";
       var nsUrlQs = new URLSearchParams(window.location.search || "");
       var nsCycleEmbed = nsUrlQs.get("cycleEmbed") === "1";
+      if (!settingsLinksHidden) {
+        document.addEventListener("click", function (ev) {
+          if (!ev || ev.defaultPrevented) return;
+          var t = ev.target;
+          if (t && t.closest && t.closest("a, button, input, select, textarea, label, [role='button']")) return;
+          try {
+            if (window.top && window.top !== window) {
+              window.top.location.href = <%- JSON.stringify(baseUrl + "/settings") %>;
+            } else {
+              window.location.href = <%- JSON.stringify(baseUrl + "/settings") %>;
+            }
+          } catch (e) {
+            window.location.href = <%- JSON.stringify(baseUrl + "/settings") %>;
+          }
+        }, true);
+      }
       if (nsCycleEnabled && Number.isFinite(nsCycleStayMins) && nsCycleStayMins > 0) {
         setTimeout(function () {
           if (nsCycleEmbed && window.parent && window.parent !== window) {
@@ -620,6 +639,7 @@
       var reduceMotion =
         typeof window.matchMedia === "function" &&
         window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      var disableAutoScroll = nsUrlQs.get("autoscroll") === "0";
       /** @type {IntersectionObserver[]} */
       var tickerObservers = [];
       var scheduleHighlightTimer = null;
@@ -1419,7 +1439,7 @@
 
       function startAutoScroll() {
         if (autoScrollTimer) clearInterval(autoScrollTimer);
-        if (reduceMotion) return;
+        if (disableAutoScroll) return;
         autoScrollTimer = setInterval(function () {
           var h = segmentHeightPx;
           if (h < 8) return;

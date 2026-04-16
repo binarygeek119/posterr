@@ -239,7 +239,25 @@
         var n = parseInt(adsUrlQs.get("cycleStayMins") || "0", 10);
         return Number.isFinite(n) && n > 0 ? n : 0;
       })();
+      var settingsLinksHidden = <%- JSON.stringify(String(typeof hideSettingsLinks !== "undefined" ? hideSettingsLinks : "false")) %> === "true";
       var adsEmbedReturnTimer = null;
+
+      if (!settingsLinksHidden) {
+        document.addEventListener("click", function (ev) {
+          if (!ev || ev.defaultPrevented) return;
+          var t = ev.target;
+          if (t && t.closest && t.closest("a, button, input, select, textarea, label, [role='button']")) return;
+          try {
+            if (window.top && window.top !== window) {
+              window.top.location.href = <%- JSON.stringify(baseUrl + "/settings") %>;
+            } else {
+              window.location.href = <%- JSON.stringify(baseUrl + "/settings") %>;
+            }
+          } catch (e) {
+            window.location.href = <%- JSON.stringify(baseUrl + "/settings") %>;
+          }
+        }, true);
+      }
 
       function clampPageStay(raw) {
         if (raw === undefined || raw === null || raw === "") return 0;

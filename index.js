@@ -3453,6 +3453,9 @@ app.get(BASEURL + "/getcards", (req, res) => {
 app.get(BASEURL + "/now-showing", (req, res) => {
   const cycleEmbed =
     String((req.query && req.query.cycleEmbed) || "").trim() === "1";
+  const hideSettingsLinks =
+    loadedSettings &&
+    String(loadedSettings.hideSettingsLinks).toLowerCase() === "true";
   res.render("now-showing", {
     baseUrl: BASEURL,
     hasConfig: setng.GetChanged(),
@@ -3473,6 +3476,7 @@ app.get(BASEURL + "/now-showing", (req, res) => {
         ? "true"
         : "false",
     viewHotkeysContext: cycleEmbed ? "embed-now-showing" : "now-showing-page",
+    hideSettingsLinks: hideSettingsLinks ? "true" : "false",
     ...newFeaturesBannerViewData(),
   });
 });
@@ -3503,6 +3507,9 @@ app.get(BASEURL + "/ads", (req, res) => {
     adsGlobalBgRaw.startsWith("/custom/ads-view/") ? adsGlobalBgRaw : "";
   const adsCycleEmbed =
     String((req.query && req.query.cycleEmbed) || "").trim() === "1";
+  const hideSettingsLinks =
+    loadedSettings &&
+    String(loadedSettings.hideSettingsLinks).toLowerCase() === "true";
   res.render("ads", {
     baseUrl: BASEURL,
     hasConfig: setng.GetChanged(),
@@ -3521,6 +3528,7 @@ app.get(BASEURL + "/ads", (req, res) => {
         ? "true"
         : "false",
     viewHotkeysContext: adsCycleEmbed ? "embed-ads" : "ads-page",
+    hideSettingsLinks: hideSettingsLinks ? "true" : "false",
     ...newFeaturesBannerViewData(),
   });
 });
@@ -5123,6 +5131,26 @@ app.get(BASEURL + "/settings/tmdb-api", (req, res) => {
     ...newFeaturesBannerViewData(),
   });
   req.session.tmdbNotice = null;
+});
+
+app.get(BASEURL + "/settings/holidays", (req, res) => {
+  if (loadedSettings.password !== undefined && !userData.valid) {
+    return res.redirect(302, BASEURL + "/logon");
+  }
+  customPicFolders = getDirectories(CUSTOM_PICTURES_ROOT);
+  res.render("settings-holidays", {
+    success: req.session.success,
+    user:
+      loadedSettings.password === undefined ? { valid: true } : userData,
+    settings: loadedSettings,
+    version: pjson.version,
+    baseUrl: BASEURL,
+    customPicFolders: customPicFolders,
+    latestVersion: latestVersion,
+    message: message,
+    updateAvailable: updateAvailable,
+    ...newFeaturesBannerViewData(),
+  });
 });
 
 app.post(BASEURL + "/settings/tmdb-api", async (req, res) => {
