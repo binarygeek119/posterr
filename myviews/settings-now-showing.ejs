@@ -43,6 +43,7 @@
       <div class="col-md-8">
         <div class="card">
           <div class="d-none d-md-flex border-bottom py-2 px-3 justify-content-end align-items-center flex-wrap">
+            <a href="<%=baseUrl%>/now-showing" class="nav-link has-icon text-body py-1 mr-3"><i class="fal fa-film"></i><span class="menu">Now Showing view</span></a>
             <a href="<%=baseUrl%>/settings#collapseFive" class="nav-link has-icon text-body py-1 mr-3"><i class="fal fa-play"></i><span class="menu">Now Playing</span></a>
             <a href="<%=baseUrl%>/settings/ads" class="nav-link has-icon text-body py-1"><i class="fal fa-bullhorn"></i><span class="menu">ADS settings</span></a>
           </div>
@@ -64,8 +65,8 @@
             <div class="alert alert-<%= notice.ok ? "success" : "danger" %>"><%= notice.text %></div>
           <% } %>
           <h4 class="mb-3">Now Showing movie list</h4>
-          <p class="small mb-3"><a href="<%=baseUrl%>/now-showing" target="_blank" rel="noopener">Open dedicated Now Showing view</a></p>
-          <p class="text-muted small">This page uses its own database and powers the <code><%=baseUrl%>/now-showing</code> screen view.</p>
+          <p class="small mb-3"><a class="font-weight-bold" href="<%=baseUrl%>/now-showing">Open dedicated Now Showing view</a></p>
+          <p class="text-muted small">This page uses its own database and powers the <a href="<%=baseUrl%>/now-showing"><code class="text-primary"><%=baseUrl%>/now-showing</code></a> screen view.</p>
           <h5 class="mt-4">Home poster carousel</h5>
           <p class="text-muted small mb-3">Optional: show your saved list as slides on the main Posterr page (<code><%=baseUrl%>/</code>). Requires at least one movie below with banner and logo (TMDB).</p>
           <form method="post" action="<%=baseUrl%>/settings/now-showing/screen" class="mb-4 pb-4 border-bottom">

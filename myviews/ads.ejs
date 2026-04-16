@@ -52,6 +52,7 @@
       transition: opacity 700ms ease;
       background: transparent;
       pointer-events: none;
+      overflow: visible;
     }
     .ad-slide.is-active {
       opacity: 1;
@@ -77,9 +78,18 @@
     }
     .ad-info {
       position: absolute;
-      left: calc(var(--img-inset-left, 0px) + clamp(0.8rem, 2vw, 1.4rem));
-      right: calc(var(--img-inset-right, 0px) + clamp(0.8rem, 2vw, 1.4rem));
-      bottom: calc(var(--img-inset-bottom, 0px) + clamp(0.8rem, 2.2vh, 1.4rem));
+      left: max(
+        env(safe-area-inset-left, 0px),
+        calc(var(--img-inset-left, 0px) + clamp(0.8rem, 2vw, 1.4rem))
+      );
+      right: max(
+        env(safe-area-inset-right, 0px),
+        calc(var(--img-inset-right, 0px) + clamp(0.8rem, 2vw, 1.4rem))
+      );
+      bottom: max(
+        env(safe-area-inset-bottom, 0px),
+        calc(var(--img-inset-bottom, 0px) + clamp(0.8rem, 2.2vh, 1.4rem))
+      );
       z-index: 4;
       display: flex;
       flex-direction: row;
@@ -87,6 +97,8 @@
       justify-content: space-between;
       gap: clamp(0.5rem, 2vw, 1.25rem);
       text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+      box-sizing: border-box;
+      min-width: 0;
     }
     .ad-info-main {
       display: flex;
@@ -95,7 +107,8 @@
       gap: 0.5rem;
       min-width: 0;
       flex: 1 1 auto;
-      max-width: min(54%, calc(100% - 9rem));
+      max-width: min(100%, min(54%, calc(100% - 9rem)));
+      overflow: visible;
     }
     .ad-name {
       margin: 0;
@@ -120,24 +133,33 @@
     }
     .ad-prices {
       display: flex;
-      flex-direction: column;
+      flex-direction: row;
+      flex-wrap: wrap;
       align-items: flex-start;
+      justify-content: flex-start;
       gap: 0.4rem;
+      min-width: 0;
+      max-width: 100%;
     }
     .ad-addon-section {
       display: flex;
       flex-direction: column;
       align-items: flex-end;
       justify-content: flex-end;
-      gap: 0.28rem;
-      flex: 0 1 auto;
-      max-width: min(46%, 15rem);
+      gap: 0.35rem;
+      flex: 0 0 auto;
+      min-width: 0;
+      max-width: min(48%, 18rem);
       text-align: right;
+      box-sizing: border-box;
+      /* Gutters so add-ons never sit flush to the letterbox edge (Chromium in Docker often differed). */
+      padding-inline-start: clamp(0.35rem, 1.2vw, 0.9rem);
+      padding-inline-end: clamp(0.35rem, 1.5vw, 1rem);
     }
     .ad-addon-section .ad-addon-heading {
       align-self: flex-end;
       text-align: right;
-      width: 100%;
+      max-width: 100%;
       margin: 0;
       /* Same family/weight/color as .ad-name; slightly smaller in the narrow column */
       font-size: clamp(0.82rem, 1.85vmin + 0.5vw, 1.35rem);
@@ -145,6 +167,7 @@
       text-transform: none;
     }
     .ad-addon-section .ad-prices {
+      flex-direction: column;
       align-items: flex-end;
     }
     .ad-price-pill {
@@ -320,11 +343,12 @@
         var scale = Math.min(sw / nw, sh / nh);
         var dw = nw * scale;
         var dh = nh * scale;
-        var padX = Math.max(0, (sw - dw) / 2);
-        var padY = Math.max(0, (sh - dh) / 2);
-        slide.style.setProperty("--img-inset-left", String(padX) + "px");
-        slide.style.setProperty("--img-inset-right", String(padX) + "px");
-        slide.style.setProperty("--img-inset-bottom", String(padY) + "px");
+        /* Integer px avoids subpixel +contain mismatches (e.g. Linux/Chromium in Docker) shifting overlays */
+        var padX = Math.max(0, Math.round((sw - dw) * 0.5));
+        var padY = Math.max(0, Math.round((sh - dh) * 0.5));
+        slide.style.setProperty("--img-inset-left", padX + "px");
+        slide.style.setProperty("--img-inset-right", padX + "px");
+        slide.style.setProperty("--img-inset-bottom", padY + "px");
       }
 
       function updateInfoInsets() {
@@ -446,6 +470,10 @@
           }
         });
         updateInfoInsets();
+        /* Second frame: layout + image decode settled (helps headless / containerized Chromium). */
+        requestAnimationFrame(function () {
+          requestAnimationFrame(updateInfoInsets);
+        });
         currentIndex = 0;
         showSlide(0);
         startCycle();
