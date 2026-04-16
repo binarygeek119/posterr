@@ -597,7 +597,7 @@
               );
             } catch (e) {}
           } else {
-            window.location.href = <%- JSON.stringify(baseUrl + "/") %>;
+            window.location.href = <%- JSON.stringify(baseUrl + "/posters") %>;
           }
         }, nsCycleStayMins * 60 * 1000);
       }
@@ -1553,6 +1553,6 @@
       setInterval(loadMovies, 15000);
     })();
   </script>
-  <%- include('posterr-view-hotkeys.ejs', { baseUrl, viewHotkeysContext }) %>
+  <%- include('posterr-view-hotkeys.ejs', { baseUrl, viewHotkeysContext, viewHotkeysEnabled }) %>
 </body>
 </html>

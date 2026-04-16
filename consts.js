@@ -99,6 +99,8 @@ const DEFAULT_SETTINGS = {
   nowShowingPageCycleStayMins: 5,
   /** When home page cycle runs: embed this dedicated view in an iframe (URL stays on `/`). */
   homePageCycleDedicatedView: "now-showing",
+  /** Enable global view-switch hotkeys: 1=posters, 2=ads, 3=now-showing. */
+  enableViewHotkeys: "true",
   enableOD: "true",
   enableSonarr: "true",
   enableRadarr: "true",

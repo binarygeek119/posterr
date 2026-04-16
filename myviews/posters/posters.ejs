@@ -14,8 +14,38 @@
     <div class="carousel-inner cardHolder h-100 w-100 ">
     </div>
 </div>
+<style>
+  /* Home cycle dedicated views run in an iframe; hard-override legacy global iframe CSS. */
+  #homeCycleEmbedWrap {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    z-index: 20000 !important;
+    background: #000 !important;
+    overflow: hidden !important;
+  }
+  #homeCycleEmbedFrame {
+    display: block !important;
+    position: absolute !important;
+    inset: 0 !important;
+    left: 0 !important;
+    top: 0 !important;
+    right: auto !important;
+    bottom: auto !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    min-width: 100vw !important;
+    min-height: 100vh !important;
+    max-width: none !important;
+    max-height: none !important;
+    border: 0 !important;
+    z-index: 0 !important;
+    background: transparent !important;
+  }
+</style>
 <div id="homeCycleEmbedWrap" class="home-cycle-embed-wrap" style="display:none;position:fixed;inset:0;z-index:20000;background:#000;">
-  <iframe id="homeCycleEmbedFrame" title="Dedicated screen" style="position:absolute;inset:0;width:100%;height:100%;border:0;" loading="eager"></iframe>
+  <iframe id="homeCycleEmbedFrame" title="Dedicated screen" style="position:absolute;inset:0;left:0;top:0;right:auto;bottom:auto;width:100%;height:100%;min-width:0;min-height:0;z-index:0;border:0;background:transparent;" loading="eager"></iframe>
 </div>
 
 <script language='javascript'>
@@ -174,7 +204,7 @@ function startInactivityCheck(element, delay, callbackInactivity, callbackActive
 //console.log('check for connection');
     const xhr = new XMLHttpRequest();
    
-    xhr.open('GET', window.location.href + 'conncheck');
+    xhr.open('GET', "<%=baseUrl%>/conncheck");
     // set response format
     xhr.responseType = 'json';
     xhr.send();
@@ -237,7 +267,7 @@ function startInactivityCheck(element, delay, callbackInactivity, callbackActive
   function getCards(){
     //console.log('getting cards');
     const xhr = new XMLHttpRequest();
-    xhr.open('GET', window.location.href + 'getcards');
+    xhr.open('GET', getCardsPath);
 
     // set response format
     xhr.responseType = 'json';
@@ -271,7 +301,7 @@ function startInactivityCheck(element, delay, callbackInactivity, callbackActive
   function updateFirstCard(){
     //console.log('getting cards');
     const xhr = new XMLHttpRequest();
-    xhr.open('GET', window.location.href + 'getcards');
+    xhr.open('GET', getCardsPath);
 
     // set response format
     xhr.responseType = 'json';
@@ -398,6 +428,11 @@ function startInactivityCheck(element, delay, callbackInactivity, callbackActive
   }
 
   $(function () {
+    var postersQs = new URLSearchParams(window.location.search || "");
+    var inHubEmbed = postersQs.get("hubEmbed") === "1";
+    var isStandalonePosters = !inHubEmbed;
+    var getCardsPath = "<%=baseUrl%>/getcards" + (inHubEmbed ? "?postersOnly=1" : "");
+    var viewHotkeysEnabled = <%- JSON.stringify(String(typeof viewHotkeysEnabled !== "undefined" ? viewHotkeysEnabled : "true")) %> === "true";
     // initial load of cards and connection check timer every 5 seconds
     setInterval(connCheck,5000);
     getCards();
@@ -478,22 +513,23 @@ function startInactivityCheck(element, delay, callbackInactivity, callbackActive
       }
     };
 
-    document.addEventListener(
-      "keydown",
-      function (ev) {
-        if (ev.defaultPrevented || ev.ctrlKey || ev.metaKey || ev.altKey) return;
-        var t = ev.target && ev.target.tagName && ev.target.tagName.toLowerCase();
-        if (t === "input" || t === "textarea" || t === "select" || (ev.target && ev.target.isContentEditable)) return;
-        if (ev.key !== "1" && ev.key !== "2" && ev.key !== "3") return;
-        if (typeof window.__posterrHomeViewSwitch !== "function") return;
-        ev.preventDefault();
-        window.__posterrHomeViewSwitch(ev.key);
-      },
-      true
-    );
-
-    if (nsCycleEnabled && Number.isFinite(nsCycleEveryMins) && nsCycleEveryMins > 0) {
-      scheduleHomeCycleEmbedOpen();
+    if (isStandalonePosters && viewHotkeysEnabled) {
+      document.addEventListener(
+        "keydown",
+        function (ev) {
+          if (ev.defaultPrevented || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+          var t = ev.target && ev.target.tagName && ev.target.tagName.toLowerCase();
+          if (t === "input" || t === "textarea" || t === "select" || (ev.target && ev.target.isContentEditable)) return;
+          if (ev.key !== "1" && ev.key !== "2" && ev.key !== "3") return;
+          if (typeof window.__posterrHomeViewSwitch !== "function") return;
+          ev.preventDefault();
+          window.__posterrHomeViewSwitch(ev.key);
+        },
+        true
+      );
+      if (nsCycleEnabled && Number.isFinite(nsCycleEveryMins) && nsCycleEveryMins > 0) {
+        scheduleHomeCycleEmbedOpen();
+      }
     }
   });
 

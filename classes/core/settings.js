@@ -105,6 +105,7 @@ class Settings {
       DEFAULT_SETTINGS.nowShowingPageCycleStayMins;
     this.homePageCycleDedicatedView =
       DEFAULT_SETTINGS.homePageCycleDedicatedView;
+    this.enableViewHotkeys = DEFAULT_SETTINGS.enableViewHotkeys;
     this.enableOD = DEFAULT_SETTINGS.enableOD;
     this.enableSonarr = DEFAULT_SETTINGS.enableSonarr;
     this.enableRadarr = DEFAULT_SETTINGS.enableRadarr;
@@ -268,6 +269,8 @@ class Settings {
       if (readSettings.homePageCycleDedicatedView === undefined)
         readSettings.homePageCycleDedicatedView =
           DEFAULT_SETTINGS.homePageCycleDedicatedView;
+      if (readSettings.enableViewHotkeys === undefined)
+        readSettings.enableViewHotkeys = DEFAULT_SETTINGS.enableViewHotkeys;
       if(readSettings.enableOD==undefined) readSettings.enableOD = 'true';
       if(readSettings.enableSonarr==undefined) readSettings.enableSonarr = 'true';
       if(readSettings.enableReadarr==undefined) readSettings.enableReadarr = 'true';
@@ -798,6 +801,10 @@ class Settings {
             : "now-showing"
           : DEFAULT_SETTINGS.homePageCycleDedicatedView;
     }
+    this.enableViewHotkeys = toSettingsBoolStr(
+      jsonObject.enableViewHotkeys,
+      cs.enableViewHotkeys ?? DEFAULT_SETTINGS.enableViewHotkeys
+    );
     if (jsonObject.enableOD) this.enableOD = jsonObject.enableOD;
     else this.enableOD = "false";
     if (jsonObject.enableSonarr) this.enableSonarr = jsonObject.enableSonarr;

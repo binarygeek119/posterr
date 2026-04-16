@@ -219,7 +219,7 @@
     (function () {
       var adsUrl = <%- JSON.stringify(baseUrl + "/ads/data") %>;
       var assetBase = <%- JSON.stringify(baseUrl) %>;
-      var homePostersUrl = <%- JSON.stringify(baseUrl + "/") %>;
+      var homePostersUrl = <%- JSON.stringify(baseUrl + "/posters") %>;
       var initialGlobalBg = <%- JSON.stringify(
         typeof adsGlobalBackgroundPath !== "undefined" && adsGlobalBackgroundPath
           ? String(adsGlobalBackgroundPath).trim()
@@ -318,6 +318,33 @@
         }
       }
 
+      function removeLegacyTimingHint() {
+        var selectors = [
+          "#adsTimingHint",
+          ".ads-timing-hint",
+          "#adsPageInfo",
+          ".ads-page-info",
+          "#adsInfoBox",
+          ".ads-info-box",
+        ];
+        selectors.forEach(function (sel) {
+          var nodes = document.querySelectorAll(sel);
+          for (var i = 0; i < nodes.length; i++) {
+            if (nodes[i] && nodes[i].parentNode) {
+              nodes[i].parentNode.removeChild(nodes[i]);
+            }
+          }
+        });
+        var all = document.querySelectorAll("div, p, section, aside");
+        var legacyTextRe = /(Each ad stays on screen|slideshow rotates|full\s*\/ads page returns)/i;
+        for (var j = 0; j < all.length; j++) {
+          var txt = (all[j].textContent || "").trim();
+          if (txt && legacyTextRe.test(txt)) {
+            all[j].remove();
+          }
+        }
+      }
+
       function showSlide(index) {
         var nodes = slidesEl.querySelectorAll(".ad-slide");
         if (!nodes.length) return;
@@ -334,12 +361,23 @@
         var sh = slide.clientHeight || 0;
         var nw = img.naturalWidth || 0;
         var nh = img.naturalHeight || 0;
+        var retryCount = parseInt(slide.getAttribute("data-inset-retry") || "0", 10);
+        if (!Number.isFinite(retryCount) || retryCount < 0) retryCount = 0;
+        function queueRetry() {
+          if (retryCount >= 12) return;
+          slide.setAttribute("data-inset-retry", String(retryCount + 1));
+          setTimeout(function () {
+            updateInfoInsetsForSlide(slide);
+          }, 34);
+        }
         if (!sw || !sh || !nw || !nh) {
           slide.style.setProperty("--img-inset-left", "0px");
           slide.style.setProperty("--img-inset-right", "0px");
           slide.style.setProperty("--img-inset-bottom", "0px");
+          queueRetry();
           return;
         }
+        slide.setAttribute("data-inset-retry", "0");
         var scale = Math.min(sw / nw, sh / nh);
         var dw = nw * scale;
         var dh = nh * scale;
@@ -480,6 +518,7 @@
       }
 
       function loadAds() {
+        removeLegacyTimingHint();
         fetch(adsUrl, { credentials: "same-origin", cache: "no-store" })
           .then(function (r) { return r.json(); })
           .then(function (payload) {
@@ -493,6 +532,7 @@
               payload && payload.titleOutline,
               payload && payload.rotationSeconds
             );
+            removeLegacyTimingHint();
           })
           .catch(function () {
             slidesEl.innerHTML = '<div class="ads-empty">Could not load ads.</div>';
@@ -500,11 +540,13 @@
           });
       }
 
+      removeLegacyTimingHint();
       loadAds();
       setInterval(loadAds, 15000);
       window.addEventListener("resize", updateInfoInsets, { passive: true });
+      window.addEventListener("load", updateInfoInsets, { once: true });
     })();
   </script>
-  <%- include('posterr-view-hotkeys.ejs', { baseUrl, viewHotkeysContext }) %>
+  <%- include('posterr-view-hotkeys.ejs', { baseUrl, viewHotkeysContext, viewHotkeysEnabled }) %>
 </body>
 </html>

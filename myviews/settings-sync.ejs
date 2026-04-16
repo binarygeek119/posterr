@@ -27,10 +27,6 @@
         <li class="breadcrumb-item active" aria-current="page">Sync</li>
       </ol>
     </nav>
-    <%if(typeof syncNotice !== 'undefined' && syncNotice && syncNotice.text && syncNotice.ok === false) {%><script>
-      alert(<%- JSON.stringify(syncNotice.text) %>);
-    </script><%}%>
-
     <div class="row gutters-sm">
       <div class="col-md-4 d-none d-md-block">
         <div class="card">
@@ -103,6 +99,9 @@
             </ul>
           </div>
           <div class="card-body">
+            <% if (typeof syncNotice !== "undefined" && syncNotice && syncNotice.text) { %>
+              <div class="alert alert-<%= syncNotice.ok ? "success" : "danger" %>" role="alert"><%= syncNotice.text %></div>
+            <% } %>
             <div class="d-flex flex-wrap align-items-start justify-content-between mb-3">
               <h4 class="mb-0">Poster &amp; library sync</h4>
               <button type="button" class="btn btn-outline-primary btn-sm d-inline-flex align-items-center flex-shrink-0 mt-2 mt-md-0 px-3" data-toggle="modal" data-target="#aboutSyncModal" aria-label="About poster and library sync">
@@ -148,6 +147,12 @@
               <form method="post" action="<%=baseUrl%>/settings/sync/abort" class="mb-0" id="syncAbortForm" onsubmit="return confirm('Abort the current library sync? Titles cached so far will be saved to the poster database.');">
                 <button type="submit" class="btn btn-outline-danger" id="syncAbortBtn" disabled>Abort sync</button>
               </form>
+            </div>
+            <div class="d-flex flex-wrap align-items-center mb-4">
+              <form method="post" action="<%=baseUrl%>/settings/sync/clear-cache" class="mb-0" id="syncClearCacheForm" onsubmit="return confirm('Clear all synced cache files and reset the poster metadata database? This cannot be undone.');">
+                <button type="submit" class="btn btn-outline-danger" id="syncClearCacheBtn">Clear sync cache + database</button>
+              </form>
+              <small class="text-muted ml-0 ml-md-3 mt-2 mt-md-0">Removes files in <code>config/cache/imagecache</code> and resets <code>config/posterr-poster-metadata.db</code>.</small>
             </div>
 
             <% var libList = typeof onDemandLibraryList !== 'undefined' && onDemandLibraryList ? onDemandLibraryList : []; %>
@@ -238,6 +243,7 @@
       var serverEl = document.getElementById("syncServerType");
       var startBtn = document.getElementById("syncStartBtn");
       var abortBtn = document.getElementById("syncAbortBtn");
+      var clearBtn = document.getElementById("syncClearCacheBtn");
       var libWrap = document.getElementById("syncLibrariesWrap");
       var libList = document.getElementById("syncLibrariesList");
 
@@ -342,12 +348,14 @@
               renderLibraries([], false);
               startBtn.disabled = false;
               if (abortBtn) abortBtn.disabled = true;
+              if (clearBtn) clearBtn.disabled = false;
               setLibButtonsDisabled(false);
               setTimeout(poll, pollMs * 2);
               return;
             }
             startBtn.disabled = data.status === "running";
             if (abortBtn) abortBtn.disabled = data.status !== "running";
+            if (clearBtn) clearBtn.disabled = data.status === "running";
             setLibButtonsDisabled(data.status === "running");
 
             if (data.indeterminate) {

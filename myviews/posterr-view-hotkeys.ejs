@@ -1,7 +1,9 @@
 <% var _vhkCtx = typeof viewHotkeysContext !== "undefined" ? viewHotkeysContext : "now-showing-page"; %>
+<% var _vhkEnabled = typeof viewHotkeysEnabled !== "undefined" ? String(viewHotkeysEnabled) === "true" : true; %>
 <!-- View switch: 1 = home posters, 2 = Now Showing, 3 = Ads (ignored in form fields). On home with an embed, the parent window handles iframe changes. -->
 <script>
 (function () {
+  if (!<%- JSON.stringify(_vhkEnabled) %>) return;
   var baseUrl = <%- JSON.stringify(baseUrl) %>;
   var ctx = <%- JSON.stringify(_vhkCtx) %>;
   function formField(el) {
@@ -29,7 +31,7 @@
       if (k !== "1" && k !== "2" && k !== "3") return;
       ev.preventDefault();
       if (ctx === "now-showing-page" || ctx === "ads-page") {
-        if (k === "1") window.location.href = baseUrl + "/";
+        if (k === "1") window.location.href = baseUrl + "/posters";
         else if (k === "2") window.location.href = baseUrl + "/now-showing";
         else if (k === "3") window.location.href = baseUrl + "/ads";
         return;

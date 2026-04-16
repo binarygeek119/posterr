@@ -3259,9 +3259,23 @@ else {
 
 
 // set routes
-app.get(BASEURL + "/", (req, res) => {
-  // try {
-  res.render("index", {
+function renderPostersHome(req, res) {
+  const homeCycleDedicatedView =
+    loadedSettings && loadedSettings.homePageCycleDedicatedView === "ads"
+      ? "ads"
+      : "now-showing";
+  const nowShowingListOnHomeEnabled =
+    loadedSettings &&
+    String(loadedSettings.enableNowShowingListInPoster).toLowerCase() ===
+      "true";
+  const nowShowingHomeCycleEnabled =
+    loadedSettings &&
+    String(loadedSettings.enableNowShowingPageCycle).toLowerCase() === "true" &&
+    (homeCycleDedicatedView === "ads" || nowShowingListOnHomeEnabled);
+  const viewHotkeysEnabled =
+    loadedSettings &&
+    String(loadedSettings.enableViewHotkeys).toLowerCase() === "true";
+  res.render("posters-home", {
     globals: globalPage,
     hasConfig: setng.GetChanged(),
     baseUrl: BASEURL,
@@ -3269,10 +3283,7 @@ app.get(BASEURL + "/", (req, res) => {
     hasArt: globalPage.hasArt,
     quizTime: globalPage.quizTime,
     rotate: globalPage.rotate,
-    nowShowingPageCycleEnabled:
-      loadedSettings && loadedSettings.enableNowShowingPageCycle === "true"
-        ? "true"
-        : "false",
+    nowShowingPageCycleEnabled: nowShowingHomeCycleEnabled ? "true" : "false",
     nowShowingPageCycleEveryMins:
       loadedSettings && loadedSettings.nowShowingPageCycleEveryMins !== undefined
         ? loadedSettings.nowShowingPageCycleEveryMins
@@ -3281,21 +3292,72 @@ app.get(BASEURL + "/", (req, res) => {
       loadedSettings && loadedSettings.nowShowingPageCycleStayMins !== undefined
         ? loadedSettings.nowShowingPageCycleStayMins
         : DEFAULT_SETTINGS.nowShowingPageCycleStayMins,
-    homePageCycleDedicatedView:
-      loadedSettings && loadedSettings.homePageCycleDedicatedView === "ads"
-        ? "ads"
-        : "now-showing",
+    homePageCycleDedicatedView: homeCycleDedicatedView,
+    viewHotkeysEnabled: viewHotkeysEnabled ? "true" : "false",
     ...newFeaturesBannerViewData(),
   }); // index refers to index.ejs
-  // }
-  // catch (ex) {
-  //   console.log('res.render:' + __dirname);
-  //   res.render(path.join(__dirname, 'myviews', 'index'), { globals: globalPage, hasConfig: setng.GetChanged(), baseUrl: BASEURL, custBrand: globalPage.custBrand, hasArt: globalPage.hasArt, quizTime: globalPage.quizTime }); // index refers to index.ejs
-  // }
+}
+
+app.get(BASEURL + "/", (req, res) => {
+  const homeCycleDedicatedView =
+    loadedSettings && loadedSettings.homePageCycleDedicatedView === "ads"
+      ? "ads"
+      : "now-showing";
+  const nowShowingListOnHomeEnabled =
+    loadedSettings &&
+    String(loadedSettings.enableNowShowingListInPoster).toLowerCase() ===
+      "true";
+  const nowShowingHomeCycleEnabled =
+    loadedSettings &&
+    String(loadedSettings.enableNowShowingPageCycle).toLowerCase() === "true" &&
+    (homeCycleDedicatedView === "ads" || nowShowingListOnHomeEnabled);
+  const viewHotkeysEnabled =
+    loadedSettings &&
+    String(loadedSettings.enableViewHotkeys).toLowerCase() === "true";
+  const everyMins =
+    loadedSettings && loadedSettings.nowShowingPageCycleEveryMins !== undefined
+      ? loadedSettings.nowShowingPageCycleEveryMins
+      : DEFAULT_SETTINGS.nowShowingPageCycleEveryMins;
+  const stayMins =
+    loadedSettings && loadedSettings.nowShowingPageCycleStayMins !== undefined
+      ? loadedSettings.nowShowingPageCycleStayMins
+      : DEFAULT_SETTINGS.nowShowingPageCycleStayMins;
+  res.render("index", {
+    baseUrl: BASEURL,
+    nowShowingPageCycleEnabled: nowShowingHomeCycleEnabled ? "true" : "false",
+    nowShowingPageCycleEveryMins: everyMins,
+    nowShowingPageCycleStayMins: stayMins,
+    homePageCycleDedicatedView: homeCycleDedicatedView,
+    viewHotkeysEnabled: viewHotkeysEnabled ? "true" : "false",
+    ...newFeaturesBannerViewData(),
+  });
+});
+
+app.get(BASEURL + "/posters", (req, res) => {
+  renderPostersHome(req, res);
 });
 
 app.get(BASEURL + "/getcards", (req, res) => {
-  res.send({ globalPage: globalPage, baseUrl: BASEURL }); // get generated cards
+  const postersOnly =
+    String((req.query && req.query.postersOnly) || "").trim() === "1";
+  if (!postersOnly) {
+    return res.send({ globalPage: globalPage, baseUrl: BASEURL }); // get generated cards
+  }
+  const cards = Array.isArray(globalPage && globalPage.cards)
+    ? globalPage.cards.filter((card) => {
+        var ct = card && card.cardType;
+        var name = Array.isArray(ct) ? String(ct[0] || "") : String(ct || "");
+        var n = name.toLowerCase();
+        return n !== "ad" && n !== "now showing";
+      })
+    : [];
+  return res.send({
+    globalPage: {
+      ...globalPage,
+      cards,
+    },
+    baseUrl: BASEURL,
+  });
 });
 
 app.get(BASEURL + "/now-showing", (req, res) => {
@@ -3315,6 +3377,11 @@ app.get(BASEURL + "/now-showing", (req, res) => {
       loadedSettings && loadedSettings.nowShowingPageCycleStayMins !== undefined
         ? loadedSettings.nowShowingPageCycleStayMins
         : DEFAULT_SETTINGS.nowShowingPageCycleStayMins,
+    viewHotkeysEnabled:
+      loadedSettings &&
+      String(loadedSettings.enableViewHotkeys).toLowerCase() === "true"
+        ? "true"
+        : "false",
     viewHotkeysContext: cycleEmbed ? "embed-now-showing" : "now-showing-page",
     ...newFeaturesBannerViewData(),
   });
@@ -3358,6 +3425,11 @@ app.get(BASEURL + "/ads", (req, res) => {
       (loadedSettings && loadedSettings.adsCurrencyCode) ||
         DEFAULT_SETTINGS.adsCurrencyCode
     ),
+    viewHotkeysEnabled:
+      loadedSettings &&
+      String(loadedSettings.enableViewHotkeys).toLowerCase() === "true"
+        ? "true"
+        : "false",
     viewHotkeysContext: adsCycleEmbed ? "embed-ads" : "ads-page",
     ...newFeaturesBannerViewData(),
   });
@@ -4459,6 +4531,34 @@ app.post(BASEURL + "/settings/sync/abort", (req, res) => {
     posterSyncAbortRequested = true;
   }
   res.redirect(302, BASEURL + "/settings/sync");
+});
+
+app.post(BASEURL + "/settings/sync/clear-cache", async (req, res) => {
+  if (loadedSettings.password !== undefined && !userData.valid) {
+    return res.redirect(302, BASEURL + "/logon");
+  }
+  if (posterSyncProgressState.status === "running") {
+    req.session.syncNotice = {
+      ok: false,
+      text: "Cannot clear sync cache while a library sync is running. Abort or wait for completion first.",
+    };
+    return res.redirect(302, BASEURL + "/settings/sync");
+  }
+  try {
+    await posterMetadata.clearPosterCacheAndMetadata();
+    posterSyncRetry.clearRetryFile();
+    req.session.syncNotice = {
+      ok: true,
+      text: "Sync cache cleared: removed cached files and reset the poster metadata database.",
+    };
+  } catch (err) {
+    const msg = err && err.message ? err.message : String(err);
+    req.session.syncNotice = {
+      ok: false,
+      text: "Could not clear sync cache: " + msg,
+    };
+  }
+  return res.redirect(302, BASEURL + "/settings/sync");
 });
 
 app.get(BASEURL + "/settings/cache/stats", (req, res) => {
