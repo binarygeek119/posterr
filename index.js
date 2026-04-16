@@ -37,6 +37,7 @@ const posterMetadata = require("./classes/core/posterMetadataDb");
 const posterSyncRetry = require("./classes/core/posterSyncRetry");
 const nowShowingDb = require("./classes/core/nowShowingDb");
 const adsDb = require("./classes/core/adsDb");
+const holidaysDb = require("./classes/core/holidaysDb");
 const {
   CONFIG_ROOT,
   CACHE_ROOT,
@@ -3047,6 +3048,8 @@ async function startup(clearCache) {
   await posterMetadata.initPosterMetadataDb();
   await nowShowingDb.initNowShowingDb();
   await adsDb.initAdsDb();
+  await ensureHolidaysDbReady();
+  holidaysDb.migrateLegacyRulesFromJson(loadedSettings && loadedSettings.holidayRules);
   await migrateLegacyGlobalAdsPriceAddOnOnce();
   startHttpServerOnce();
   if (loadedSettings == 'undefined') {
@@ -3428,10 +3431,21 @@ app.get(BASEURL + "/posters", (req, res) => {
 });
 
 app.get(BASEURL + "/getcards", (req, res) => {
+  const holidayTags = activeHolidayTagsForToday();
   const postersOnly =
     String((req.query && req.query.postersOnly) || "").trim() === "1";
   if (!postersOnly) {
-    return res.send({ globalPage: globalPage, baseUrl: BASEURL }); // get generated cards
+    const cards = boostCardsByHolidayTags(
+      Array.isArray(globalPage && globalPage.cards) ? globalPage.cards : [],
+      holidayTags
+    );
+    return res.send({
+      globalPage: {
+        ...globalPage,
+        cards,
+      },
+      baseUrl: BASEURL,
+    }); // get generated cards
   }
   const cards = Array.isArray(globalPage && globalPage.cards)
     ? globalPage.cards.filter((card) => {
@@ -3441,10 +3455,11 @@ app.get(BASEURL + "/getcards", (req, res) => {
         return n !== "ad" && n !== "now showing";
       })
     : [];
+  const boosted = boostCardsByHolidayTags(cards, holidayTags);
   return res.send({
     globalPage: {
       ...globalPage,
-      cards,
+      cards: boosted,
     },
     baseUrl: BASEURL,
   });
@@ -3560,6 +3575,232 @@ function normalizeNowShowingTitle(t) {
     .replace(/[^a-z0-9\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+let holidaysDbInitPromise = null;
+async function ensureHolidaysDbReady() {
+  if (!holidaysDbInitPromise) {
+    holidaysDbInitPromise = holidaysDb.initHolidaysDb().catch((e) => {
+      holidaysDbInitPromise = null;
+      throw e;
+    });
+  }
+  await holidaysDbInitPromise;
+}
+
+function normalizeHolidayMonthDay(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  const m = s.match(/^(\d{1,2})-(\d{1,2})$/);
+  if (m) {
+    const mo = parseInt(m[1], 10);
+    const da = parseInt(m[2], 10);
+    if (mo >= 1 && mo <= 12 && da >= 1 && da <= 31) {
+      return String(mo).padStart(2, "0") + "-" + String(da).padStart(2, "0");
+    }
+  }
+  const dt = new Date(s);
+  if (isNaN(dt.getTime())) return "";
+  return (
+    String(dt.getMonth() + 1).padStart(2, "0") +
+    "-" +
+    String(dt.getDate()).padStart(2, "0")
+  );
+}
+
+function normalizeHolidayInt(raw, min, max, fallback) {
+  const n = parseInt(String(raw == null ? "" : raw).trim(), 10);
+  if (isNaN(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
+
+function normalizeHolidayMode(raw) {
+  return String(raw || "").trim().toLowerCase() === "dynamic"
+    ? "dynamic"
+    : "fixed";
+}
+
+function computeNthWeekdayOfMonth(year, monthOneBased, weekday, nth) {
+  if (!Number.isFinite(year)) return null;
+  const month = Math.max(1, Math.min(12, monthOneBased));
+  const wd = Math.max(0, Math.min(6, weekday));
+  const nthNorm = String(nth || "").toLowerCase() === "last" ? "last" : String(nth);
+  if (nthNorm === "last") {
+    const last = new Date(year, month, 0);
+    const d = new Date(last.getTime());
+    while (d.getDay() !== wd) d.setDate(d.getDate() - 1);
+    return d;
+  }
+  const n = normalizeHolidayInt(nthNorm, 1, 5, 1);
+  const first = new Date(year, month - 1, 1);
+  const delta = (wd - first.getDay() + 7) % 7;
+  const day = 1 + delta + (n - 1) * 7;
+  const candidate = new Date(year, month - 1, day);
+  if (candidate.getMonth() !== month - 1) return null;
+  return candidate;
+}
+
+function readHolidayRulesFromSettings() {
+  let parsed = [];
+  try {
+    parsed = holidaysDb.listRules();
+  } catch (e) {
+    parsed = [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .map((r) => {
+      const mode = normalizeHolidayMode(r && r.mode);
+      const tag = String((r && r.tag) || "").trim().toLowerCase();
+      if (mode === "dynamic") {
+        const month = normalizeHolidayInt(r && r.month, 1, 12, 11);
+        const weekday = normalizeHolidayInt(r && r.weekday, 0, 6, 4);
+        const nthRaw = String((r && r.nth) || "").trim().toLowerCase();
+        const nth =
+          nthRaw === "last"
+            ? "last"
+            : String(normalizeHolidayInt(nthRaw || "1", 1, 5, 1));
+        const spanDays = normalizeHolidayInt(r && r.spanDays, 0, 31, 0);
+        return { mode, month, weekday, nth, spanDays, tag };
+      }
+      const start = normalizeHolidayMonthDay(r && r.start);
+      const end = normalizeHolidayMonthDay(r && r.end);
+      return { mode: "fixed", start, end, tag };
+    })
+    .filter((r) => {
+      if (!r.tag) return false;
+      if (r.mode === "dynamic") return true;
+      return !!(r.start && r.end);
+    });
+}
+
+function monthDayInHolidayRange(todayMd, startMd, endMd) {
+  if (!todayMd || !startMd || !endMd) return false;
+  if (startMd <= endMd) return todayMd >= startMd && todayMd <= endMd;
+  return todayMd >= startMd || todayMd <= endMd;
+}
+
+function activeHolidayTagsForToday() {
+  const now = new Date();
+  const todayMd =
+    String(now.getMonth() + 1).padStart(2, "0") +
+    "-" +
+    String(now.getDate()).padStart(2, "0");
+  const active = new Set();
+  for (const rule of readHolidayRulesFromSettings()) {
+    if (rule.mode === "dynamic") {
+      const base = computeNthWeekdayOfMonth(
+        now.getFullYear(),
+        rule.month,
+        rule.weekday,
+        rule.nth
+      );
+      if (!base) continue;
+      const end = new Date(base.getTime());
+      end.setDate(end.getDate() + (rule.spanDays || 0));
+      const startMd =
+        String(base.getMonth() + 1).padStart(2, "0") +
+        "-" +
+        String(base.getDate()).padStart(2, "0");
+      const endMd =
+        String(end.getMonth() + 1).padStart(2, "0") +
+        "-" +
+        String(end.getDate()).padStart(2, "0");
+      if (monthDayInHolidayRange(todayMd, startMd, endMd)) {
+        active.add(rule.tag);
+      }
+      continue;
+    }
+    if (monthDayInHolidayRange(todayMd, rule.start, rule.end)) {
+      active.add(rule.tag);
+    }
+  }
+  return active;
+}
+
+function cardMatchesHolidayTag(card, tagLc) {
+  if (!card || !tagLc) return false;
+  const genreText = Array.isArray(card.genre)
+    ? card.genre.join(" ")
+    : String(card.genre || "");
+  const hay = (
+    String(card.title || "") +
+    " " +
+    String(card.tagLine || "") +
+    " " +
+    String(card.summary || "") +
+    " " +
+    String(card.studio || "") +
+    " " +
+    String(card.cast || "") +
+    " " +
+    String(card.directors || "") +
+    " " +
+    String(card.authors || "") +
+    " " +
+    String(card.albumArtist || "") +
+    " " +
+    String(card.tags || "") +
+    " " +
+    genreText
+  )
+    .toLowerCase()
+    .trim();
+  return hay.includes(tagLc);
+}
+
+function nowShowingRowMatchesHolidayTag(row, tagLc) {
+  if (!row || !tagLc) return false;
+  const hay = (
+    String(row.title || "") +
+    " " +
+    String(row.overview || "") +
+    " " +
+    String(row.genres || "") +
+    " " +
+    String(row.topCast || "") +
+    " " +
+    String(row.studio || "")
+  )
+    .toLowerCase()
+    .trim();
+  return hay.includes(tagLc);
+}
+
+function boostCardsByHolidayTags(cards, activeTags) {
+  if (!Array.isArray(cards) || !cards.length) return cards;
+  if (!(activeTags instanceof Set) || activeTags.size === 0) return cards;
+  const boost = [];
+  for (const card of cards) {
+    let matches = false;
+    for (const tag of activeTags) {
+      if (cardMatchesHolidayTag(card, tag)) {
+        matches = true;
+        break;
+      }
+    }
+    if (matches) boost.push(card);
+  }
+  if (!boost.length) return cards;
+  return cards.concat(boost, boost);
+}
+
+function boostNowShowingRowsByHolidayTags(rows, activeTags) {
+  if (!Array.isArray(rows) || !rows.length) return rows;
+  if (!(activeTags instanceof Set) || activeTags.size === 0) return rows;
+  const boost = [];
+  for (const row of rows) {
+    let matches = false;
+    for (const tag of activeTags) {
+      if (nowShowingRowMatchesHolidayTag(row, tag)) {
+        matches = true;
+        break;
+      }
+    }
+    if (matches) boost.push({ ...row });
+  }
+  if (!boost.length) return rows;
+  return rows.concat(boost, boost);
 }
 
 function normalizeLibraryNameFor3d(name) {
@@ -4044,6 +4285,7 @@ app.get(BASEURL + "/now-showing/data", async (req, res) => {
       );
     }
     movies = movies.filter(nowShowingRowHasBannerAndLogo);
+    movies = boostNowShowingRowsByHolidayTags(movies, activeHolidayTagsForToday());
     await ensureNowShowingMoviesImageCacheForResponse(movies, BASEURL);
     let curatedWeight = parseInt(loadedSettings.nowShowingCuratedWeight, 10);
     if (isNaN(curatedWeight))
@@ -4627,6 +4869,15 @@ app.post(BASEURL + "/settings/sync/abort", (req, res) => {
   }
   if (posterSyncProgressState.status === "running") {
     posterSyncAbortRequested = true;
+    req.session.syncNotice = {
+      ok: true,
+      text: "Abort requested. Current library item finishes, then sync will stop.",
+    };
+  } else {
+    req.session.syncNotice = {
+      ok: false,
+      text: "No sync is currently running.",
+    };
   }
   res.redirect(302, BASEURL + "/settings/sync");
 });
@@ -5133,11 +5384,20 @@ app.get(BASEURL + "/settings/tmdb-api", (req, res) => {
   req.session.tmdbNotice = null;
 });
 
-app.get(BASEURL + "/settings/holidays", (req, res) => {
+app.get(BASEURL + "/settings/holidays", async (req, res) => {
   if (loadedSettings.password !== undefined && !userData.valid) {
     return res.redirect(302, BASEURL + "/logon");
   }
   customPicFolders = getDirectories(CUSTOM_PICTURES_ROOT);
+  let holidayRules = [];
+  try {
+    await ensureHolidaysDbReady();
+    holidayRules = holidaysDb.listRules();
+  } catch (e) {
+    holidayRules = [];
+  }
+  const holidayNotice = req.session.holidayNotice || null;
+  req.session.holidayNotice = null;
   res.render("settings-holidays", {
     success: req.session.success,
     user:
@@ -5149,8 +5409,127 @@ app.get(BASEURL + "/settings/holidays", (req, res) => {
     latestVersion: latestVersion,
     message: message,
     updateAvailable: updateAvailable,
+    holidayRules,
+    holidayNotice,
     ...newFeaturesBannerViewData(),
   });
+});
+
+app.post(BASEURL + "/settings/holidays", async (req, res) => {
+  if (loadedSettings.password !== undefined && !userData.valid) {
+    return res.redirect(302, BASEURL + "/logon");
+  }
+  try {
+    await ensureHolidaysDbReady();
+    const startsRaw = Array.isArray(req.body.holidayStart)
+      ? req.body.holidayStart
+      : req.body.holidayStart != null
+        ? [req.body.holidayStart]
+        : [];
+    const endsRaw = Array.isArray(req.body.holidayEnd)
+      ? req.body.holidayEnd
+      : req.body.holidayEnd != null
+        ? [req.body.holidayEnd]
+        : [];
+    const tagsRaw = Array.isArray(req.body.holidayTag)
+      ? req.body.holidayTag
+      : req.body.holidayTag != null
+        ? [req.body.holidayTag]
+        : [];
+    const modesRaw = Array.isArray(req.body.holidayMode)
+      ? req.body.holidayMode
+      : req.body.holidayMode != null
+        ? [req.body.holidayMode]
+        : [];
+    const monthsRaw = Array.isArray(req.body.holidayMonth)
+      ? req.body.holidayMonth
+      : req.body.holidayMonth != null
+        ? [req.body.holidayMonth]
+        : [];
+    const weekdaysRaw = Array.isArray(req.body.holidayWeekday)
+      ? req.body.holidayWeekday
+      : req.body.holidayWeekday != null
+        ? [req.body.holidayWeekday]
+        : [];
+    const nthsRaw = Array.isArray(req.body.holidayNth)
+      ? req.body.holidayNth
+      : req.body.holidayNth != null
+        ? [req.body.holidayNth]
+        : [];
+    const spansRaw = Array.isArray(req.body.holidaySpanDays)
+      ? req.body.holidaySpanDays
+      : req.body.holidaySpanDays != null
+        ? [req.body.holidaySpanDays]
+        : [];
+    const maxLen = Math.max(
+      startsRaw.length,
+      endsRaw.length,
+      tagsRaw.length,
+      modesRaw.length,
+      monthsRaw.length,
+      weekdaysRaw.length,
+      nthsRaw.length,
+      spansRaw.length
+    );
+    const out = [];
+    for (let i = 0; i < maxLen; i++) {
+      const mode = normalizeHolidayMode(modesRaw[i]);
+      const tag = String(tagsRaw[i] || "").trim();
+      const start = normalizeHolidayMonthDay(startsRaw[i]);
+      const end = normalizeHolidayMonthDay(endsRaw[i]);
+      const month = normalizeHolidayInt(monthsRaw[i], 1, 12, 11);
+      const weekday = normalizeHolidayInt(weekdaysRaw[i], 0, 6, 4);
+      const nthRaw = String(nthsRaw[i] || "").trim().toLowerCase();
+      const nth = nthRaw === "last" ? "last" : String(normalizeHolidayInt(nthRaw || "1", 1, 5, 1));
+      const spanDays = normalizeHolidayInt(spansRaw[i], 0, 31, 0);
+      if (
+        !tag &&
+        !start &&
+        !end &&
+        !String(modesRaw[i] || "").trim() &&
+        !String(monthsRaw[i] || "").trim() &&
+        !String(weekdaysRaw[i] || "").trim() &&
+        !String(nthsRaw[i] || "").trim() &&
+        !String(spansRaw[i] || "").trim()
+      ) {
+        continue;
+      }
+      if (!tag) {
+        throw new Error("Each holiday row needs a tag.");
+      }
+      if (mode === "dynamic") {
+        out.push({
+          mode: "dynamic",
+          month,
+          weekday,
+          nth,
+          spanDays,
+          tag: tag.slice(0, 80),
+        });
+        continue;
+      }
+      if (!start || !end) {
+        throw new Error("Fixed date rows need start date and end date.");
+      }
+      out.push({
+        mode: "fixed",
+        start,
+        end,
+        tag: tag.slice(0, 80),
+      });
+    }
+    holidaysDb.replaceRules(out);
+    req.session.holidayNotice = {
+      ok: true,
+      text: "Holiday date-tag rules saved.",
+    };
+  } catch (e) {
+    req.session.holidayNotice = {
+      ok: false,
+      text: "Could not save holiday rules: " + (e && e.message ? e.message : String(e)),
+    };
+  }
+  return res.redirect(302, BASEURL + "/settings/holidays");
 });
 
 app.post(BASEURL + "/settings/tmdb-api", async (req, res) => {

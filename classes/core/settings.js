@@ -157,6 +157,7 @@ class Settings {
     this.tmdbApiKey = DEFAULT_SETTINGS.tmdbApiKey;
     this.newFeaturesAcknowledgedVersion =
       DEFAULT_SETTINGS.newFeaturesAcknowledgedVersion;
+    this.holidayRules = DEFAULT_SETTINGS.holidayRules;
     return;
   }
 
@@ -332,6 +333,8 @@ class Settings {
       if(readSettings.tmdbApiKey === undefined) readSettings.tmdbApiKey = "";
       if (readSettings.newFeaturesAcknowledgedVersion === undefined)
         readSettings.newFeaturesAcknowledgedVersion = "";
+      if (readSettings.holidayRules === undefined)
+        readSettings.holidayRules = DEFAULT_SETTINGS.holidayRules;
       if(readSettings.enableLidarr==undefined) readSettings.enableLidarr = 'true';
       if(readSettings.lidarrURL==undefined) readSettings.lidarrURL = '';
       if(readSettings.lidarrToken==undefined) readSettings.lidarrToken = '';
@@ -1057,6 +1060,14 @@ class Settings {
         cs.newFeaturesAcknowledgedVersion !== undefined
           ? cs.newFeaturesAcknowledgedVersion
           : DEFAULT_SETTINGS.newFeaturesAcknowledgedVersion;
+    }
+    if (jsonObject.holidayRules !== undefined && jsonObject.holidayRules !== null) {
+      this.holidayRules = String(jsonObject.holidayRules);
+    } else {
+      this.holidayRules =
+        cs.holidayRules !== undefined
+          ? cs.holidayRules
+          : DEFAULT_SETTINGS.holidayRules;
     }
 
     // convert JSON object to string (pretty format)

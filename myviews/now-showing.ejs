@@ -35,6 +35,29 @@
       min-height: 100vh;
       min-height: 100dvh;
     }
+    body.now-showing-page.now-showing-low-power .topbar {
+      backdrop-filter: none;
+      background: rgba(15, 17, 21, 0.98);
+    }
+    body.now-showing-page.now-showing-low-power .movie-card,
+    body.now-showing-page.now-showing-low-power .movie-card--now-playing,
+    body.now-showing-page.now-showing-low-power .movie-card--schedule-active {
+      box-shadow: none;
+    }
+    body.now-showing-page.now-showing-low-power .movie-banner {
+      opacity: 0.62;
+      transform: none;
+    }
+    body.now-showing-page.now-showing-low-power .movie-overlay {
+      background: rgba(0, 0, 0, 0.52);
+    }
+    body.now-showing-page.now-showing-low-power .now-showing-top-fade,
+    body.now-showing-page.now-showing-low-power .now-showing-bottom-fade {
+      display: none;
+    }
+    body.now-showing-page.now-showing-low-power .movie-logo img {
+      filter: none;
+    }
     .topbar {
       position: relative;
       z-index: 12;
@@ -590,6 +613,19 @@
       var settingsLinksHidden = <%- JSON.stringify(String(typeof hideSettingsLinks !== "undefined" ? hideSettingsLinks : "false")) %> === "true";
       var nsUrlQs = new URLSearchParams(window.location.search || "");
       var nsCycleEmbed = nsUrlQs.get("cycleEmbed") === "1";
+      var lowPowerRequested = nsUrlQs.get("lowPower") === "1";
+      var lowPowerDetected = false;
+      try {
+        var mem = Number(navigator && navigator.deviceMemory);
+        var cpu = Number(navigator && navigator.hardwareConcurrency);
+        lowPowerDetected =
+          (Number.isFinite(mem) && mem > 0 && mem <= 1.5) ||
+          (Number.isFinite(cpu) && cpu > 0 && cpu <= 4);
+      } catch (e) {}
+      var lowPowerMode = lowPowerRequested || lowPowerDetected;
+      if (lowPowerMode && document.body) {
+        document.body.classList.add("now-showing-low-power");
+      }
       if (!settingsLinksHidden) {
         document.addEventListener("click", function (ev) {
           if (!ev || ev.defaultPrevented) return;
@@ -624,6 +660,7 @@
       var fallbackBanner = <%- JSON.stringify(baseUrl + "/images/no-poster-available.png") %>;
       var settingsVersion = <%- JSON.stringify(String(typeof settingsVersion !== "undefined" ? settingsVersion : "0")) %>;
       var MAX_LOOP_CARDS = 100;
+      var maxLoopCards = lowPowerMode ? 48 : MAX_LOOP_CARDS;
       var curatedWeight = 4;
       var sourceMovies = [];
       var listEl = document.getElementById("movieList");
@@ -639,6 +676,7 @@
       var reduceMotion =
         typeof window.matchMedia === "function" &&
         window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (lowPowerMode) reduceMotion = true;
       var disableAutoScroll = nsUrlQs.get("autoscroll") === "0";
       /** @type {IntersectionObserver[]} */
       var tickerObservers = [];
@@ -1298,7 +1336,7 @@
           if (loopWrap && !loopWrap.hasAttribute("hidden")) {
             updateShowtimeScheduleHighlights(loopWrap);
           }
-        }, 1000);
+        }, lowPowerMode ? 3000 : 1000);
       }
 
       function stopScheduleHighlightTimer() {
@@ -1440,15 +1478,17 @@
       function startAutoScroll() {
         if (autoScrollTimer) clearInterval(autoScrollTimer);
         if (disableAutoScroll) return;
+        var scrollStep = lowPowerMode ? 2 : 1;
+        var scrollTickMs = lowPowerMode ? 60 : 35;
         autoScrollTimer = setInterval(function () {
           var h = segmentHeightPx;
           if (h < 8) return;
           if (listEl.scrollHeight <= listEl.clientHeight) return;
-          listEl.scrollTop += 1;
+          listEl.scrollTop += scrollStep;
           if (listEl.scrollTop >= h - 0.5) {
             listEl.scrollTop -= h;
           }
-        }, 35);
+        }, scrollTickMs);
       }
 
       function renderEmpty(msg) {
@@ -1528,8 +1568,8 @@
             }
 
             var pool = weightedShufflePool(sourceMovies, curatedWeight);
-            if (pool.length > MAX_LOOP_CARDS) {
-              pool = pool.slice(0, MAX_LOOP_CARDS);
+            if (pool.length > maxLoopCards) {
+              pool = pool.slice(0, maxLoopCards);
             }
 
             listEl.scrollTop = 0;
@@ -1570,7 +1610,7 @@
       setInterval(tickTopClock, 1000);
 
       loadMovies();
-      setInterval(loadMovies, 15000);
+      setInterval(loadMovies, lowPowerMode ? 30000 : 15000);
     })();
   </script>
   <%- include('posterr-view-hotkeys.ejs', { baseUrl, viewHotkeysContext, viewHotkeysEnabled }) %>

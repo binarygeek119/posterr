@@ -167,7 +167,9 @@ const DEFAULT_SETTINGS = {
   cachedPosterSlideCount: 48,
   tmdbApiKey: "",
   /** Last package.json version the admin acknowledged (hides “new features” banner when it matches current version) */
-  newFeaturesAcknowledgedVersion: ""
+  newFeaturesAcknowledgedVersion: "",
+  /** Seasonal date ranges + tag match rules used to boost matching media in home posters and /now-showing. */
+  holidayRules: "[]"
 };
 
 module.exports = DEFAULT_SETTINGS;

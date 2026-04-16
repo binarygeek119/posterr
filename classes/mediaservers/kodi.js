@@ -147,6 +147,39 @@ class Kodi {
       .filter(Boolean);
   }
 
+  static extractKodiTags(item) {
+    if (!item || typeof item !== "object") return "";
+    const out = [];
+    const add = (v) => {
+      if (!v) return;
+      if (Array.isArray(v)) {
+        for (const it of v) add(it);
+        return;
+      }
+      if (typeof v === "object") {
+        add(v.label || v.Label || v.name || v.Name || "");
+        return;
+      }
+      const s = String(v).trim();
+      if (!s) return;
+      out.push(s);
+    };
+    add(item.tag);
+    add(item.tags);
+    add(item.genre);
+    add(item.studio);
+    add(item.mpaa);
+    const uniq = [];
+    const seen = new Set();
+    for (const s of out) {
+      const lc = s.toLowerCase();
+      if (seen.has(lc)) continue;
+      seen.add(lc);
+      uniq.push(s);
+    }
+    return uniq.join(", ");
+  }
+
   async GetVideoSources() {
     const r = await this.rpc("Files.GetSources", { media: "video" });
     return r.sources || [];
@@ -298,6 +331,7 @@ class Kodi {
       medCard.contentRating = contentRating;
       medCard.ratingColour = EmbyJellyfinBase.ratingColour(contentRating);
       medCard.genre = await util.emptyIfNull(Kodi.genresToArray(item.genre));
+      medCard.tags = Kodi.extractKodiTags(item);
       medCard.summary = item.plot || "";
 
       const ratingVal = parseFloat(item.rating);
@@ -1143,6 +1177,7 @@ class Kodi {
 
       medCard.year = md.year;
       medCard.genre = await util.emptyIfNull(Kodi.genresToArray(md.genre));
+      medCard.tags = Kodi.extractKodiTags(md);
       medCard.summary = md.plot || "";
       medCard.cardType = md.ctype;
 

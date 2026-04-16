@@ -56,6 +56,42 @@ async function plexCacheClearLogo(core, self, md, idForFile, medCard) {
   }
 }
 
+function extractPlexTags(md) {
+  if (!md || typeof md !== "object") return "";
+  const out = [];
+  const add = (v) => {
+    if (!v) return;
+    if (Array.isArray(v)) {
+      for (const it of v) add(it);
+      return;
+    }
+    if (typeof v === "object") {
+      add(v.tag || v.Tag || v.title || v.Title || v.label || v.Label || "");
+      return;
+    }
+    const s = String(v).trim();
+    if (!s) return;
+    out.push(s);
+  };
+  add(md.Tag);
+  add(md.tag);
+  add(md.Label);
+  add(md.label);
+  add(md.Collection);
+  add(md.collection);
+  add(md.Genre);
+  add(md.genre);
+  const uniq = [];
+  const seen = new Set();
+  for (const s of out) {
+    const lc = s.toLowerCase();
+    if (seen.has(lc)) continue;
+    seen.add(lc);
+    uniq.push(s);
+  }
+  return uniq.join(", ");
+}
+
 /**
  * @desc Used to communicate with Plex
  * @param {string} HTTPS - set this to true if Plex only allows secure connections
@@ -524,6 +560,7 @@ class Plex {
 
         //medCard.year = md.year;
         medCard.genre = await util.emptyIfNull(md.Genre);
+        medCard.tags = extractPlexTags(md);
         medCard.summary = md.summary;
         medCard.cast = util.formatCastFromPlexRole(md.Role);
         medCard.directors = util.formatDirectorsFromPlexDirector(md.Director);
@@ -1289,6 +1326,7 @@ class Plex {
 
         medCard.year = md.year;
         medCard.genre = await util.emptyIfNull(md.Genre);
+        medCard.tags = extractPlexTags(md);
         medCard.summary = md.summary;
         medCard.cast = util.formatCastFromPlexRole(md.Role);
         medCard.directors = util.formatDirectorsFromPlexDirector(md.Director);

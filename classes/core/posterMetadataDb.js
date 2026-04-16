@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS poster_entries (
   tag_line TEXT NOT NULL DEFAULT '',
   year TEXT NOT NULL DEFAULT '',
   media_type TEXT NOT NULL DEFAULT 'movie',
+  tags_text TEXT NOT NULL DEFAULT '',
   genres TEXT NOT NULL DEFAULT '',
   top_cast TEXT NOT NULL DEFAULT '',
   actor_1 TEXT NOT NULL DEFAULT '',
@@ -75,6 +76,7 @@ const EXTRA_SCHEMA_COLUMNS = [
   { name: "portrait_author_cache_file", def: "TEXT NOT NULL DEFAULT ''" },
   { name: "portrait_artist_cache_file", def: "TEXT NOT NULL DEFAULT ''" },
   { name: "genres", def: "TEXT NOT NULL DEFAULT ''" },
+  { name: "tags_text", def: "TEXT NOT NULL DEFAULT ''" },
   { name: "top_cast", def: "TEXT NOT NULL DEFAULT ''" },
   { name: "actor_1", def: "TEXT NOT NULL DEFAULT ''" },
   { name: "actor_2", def: "TEXT NOT NULL DEFAULT ''" },
@@ -267,9 +269,9 @@ function migrateLegacyJson() {
       cache_file, logo_cache_file, art_cache_file, banner_cache_file,
       portrait_actor_cache_file, portrait_actress_cache_file,
       portrait_director_cache_file, portrait_author_cache_file, portrait_artist_cache_file,
-      title, tag_line, year, media_type, genres, top_cast, actor_1, actor_2, studio, runtime_mins, rating, content_rating, plot, rating_score, rating_content, summary, server_kind, poster_ar,
+      title, tag_line, year, media_type, tags_text, genres, top_cast, actor_1, actor_2, studio, runtime_mins, rating, content_rating, plot, rating_score, rating_content, summary, server_kind, poster_ar,
       dbid, api_item_id, library_kind, library_name, source_url, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   try {
     _sqlDb.run("BEGIN");
@@ -288,6 +290,7 @@ function migrateLegacyJson() {
         tagLine: e.tagLine,
         year: e.year,
         mediaType: e.mediaType,
+        tagsText: e.tagsText,
         genres: e.genres,
         topCast: e.topCast,
         actor1: e.actor1,
@@ -352,6 +355,7 @@ function rowFromDb(r) {
     tagLine: r.tag_line || "",
     year: r.year || "",
     mediaType: r.media_type || "",
+    tagsText: r.tags_text || "",
     genres: r.genres || "",
     topCast: r.top_cast || "",
     actor1: r.actor_1 || "",
@@ -391,6 +395,7 @@ function entryToParams(e) {
     e.tagLine || "",
     e.year || "",
     e.mediaType || "movie",
+    e.tagsText || "",
     e.genres || "",
     e.topCast || "",
     e.actor1 || "",
@@ -412,6 +417,38 @@ function entryToParams(e) {
     e.sourceUrl || "",
     e.updatedAt || "",
   ];
+}
+
+function normalizeMetadataTags(card) {
+  if (!card || typeof card !== "object") return "";
+  const out = [];
+  const add = (v) => {
+    if (v == null) return;
+    if (Array.isArray(v)) {
+      for (const x of v) add(x);
+      return;
+    }
+    const s = String(v).trim();
+    if (!s) return;
+    out.push(s);
+  };
+  add(card.tags);
+  add(card.keywords);
+  add(card.labels);
+  add(card.genre);
+  add(card.contentRating);
+  add(card.studio);
+  add(card.network);
+  add(card.cast);
+  const uniq = [];
+  const seen = new Set();
+  for (const s of out) {
+    const lc = s.toLowerCase();
+    if (seen.has(lc)) continue;
+    seen.add(lc);
+    uniq.push(s);
+  }
+  return uniq.join(", ").slice(0, 400);
 }
 
 function selectAllEntries() {
@@ -508,9 +545,9 @@ function replaceAllEntries(entries) {
       cache_file, logo_cache_file, art_cache_file, banner_cache_file,
       portrait_actor_cache_file, portrait_actress_cache_file,
       portrait_director_cache_file, portrait_author_cache_file, portrait_artist_cache_file,
-      title, tag_line, year, media_type, genres, top_cast, actor_1, actor_2, studio, runtime_mins, rating, content_rating, plot, rating_score, rating_content, summary, server_kind, poster_ar,
+      title, tag_line, year, media_type, tags_text, genres, top_cast, actor_1, actor_2, studio, runtime_mins, rating, content_rating, plot, rating_score, rating_content, summary, server_kind, poster_ar,
       dbid, api_item_id, library_kind, library_name, source_url, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   try {
     _sqlDb.run("BEGIN");
@@ -762,9 +799,9 @@ function registerFromMediaServerCards(nsCards, odCards, serverKind) {
       cache_file, logo_cache_file, art_cache_file, banner_cache_file,
       portrait_actor_cache_file, portrait_actress_cache_file,
       portrait_director_cache_file, portrait_author_cache_file, portrait_artist_cache_file,
-      title, tag_line, year, media_type, genres, top_cast, actor_1, actor_2, studio, runtime_mins, rating, content_rating, plot, rating_score, rating_content, summary, server_kind, poster_ar,
+      title, tag_line, year, media_type, tags_text, genres, top_cast, actor_1, actor_2, studio, runtime_mins, rating, content_rating, plot, rating_score, rating_content, summary, server_kind, poster_ar,
       dbid, api_item_id, library_kind, library_name, source_url, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   try {
@@ -810,6 +847,7 @@ function registerFromMediaServerCards(nsCards, odCards, serverKind) {
         tagLine: String(card.tagLine || "").trim(),
         year: String(card.year || "").trim(),
         mediaType: String(card.mediaType || "movie").trim() || "movie",
+        tagsText: normalizeMetadataTags(card),
         genres: Array.isArray(card.genre)
           ? card.genre.join(", ")
           : String(card.genre || "").trim(),
@@ -875,6 +913,7 @@ function registerFromMediaServerCards(nsCards, odCards, serverKind) {
         old.tagLine !== row.tagLine ||
         old.year !== row.year ||
         old.mediaType !== row.mediaType ||
+        old.tagsText !== row.tagsText ||
         old.genres !== row.genres ||
         old.topCast !== row.topCast ||
         old.actor1 !== row.actor1 ||
@@ -1027,6 +1066,7 @@ function applyCachedPostersToMediaCards(cards, serverKind) {
       const g = row.genres != null ? String(row.genres).trim() : "";
       if (g) card.genre = g;
     }
+    if (!card.tags && row.tagsText) card.tags = row.tagsText;
     if (!card.studio && row.studio) card.studio = row.studio;
     if (
       (!card.runTime || card.runTime === "" || card.runTime === 0) &&
@@ -1092,6 +1132,7 @@ function buildFallbackMediaCards(count, serverKind) {
       c.posterLogoURL = "/imagecache/" + row.logoCacheFile;
     }
     c.genre = row.genres != null ? String(row.genres).trim() : "";
+    c.tags = row.tagsText || "";
     c.studio = row.studio || "";
     if (row.runtimeMins > 0) c.runTime = String(row.runtimeMins);
     c.rating = row.rating || "";

@@ -217,6 +217,52 @@ function filterMediaItemsForOdemandFilters(items, genres, recentlyAdded, content
   return all;
 }
 
+function extractEmbyTags(item) {
+  if (!item || typeof item !== "object") return "";
+  const out = [];
+  const add = (v) => {
+    if (!v) return;
+    if (Array.isArray(v)) {
+      for (const it of v) add(it);
+      return;
+    }
+    if (typeof v === "object") {
+      add(
+        v.Name ||
+          v.name ||
+          v.Tag ||
+          v.tag ||
+          v.Title ||
+          v.title ||
+          v.DisplayName ||
+          v.displayName ||
+          ""
+      );
+      return;
+    }
+    const s = String(v).trim();
+    if (!s) return;
+    out.push(s);
+  };
+  add(item.Tags);
+  add(item.tags);
+  add(item.TagItems);
+  add(item.tagItems);
+  add(item.Genres);
+  add(item.genres);
+  add(item.Studios);
+  add(item.studios);
+  const uniq = [];
+  const seen = new Set();
+  for (const s of out) {
+    const lc = s.toLowerCase();
+    if (seen.has(lc)) continue;
+    seen.add(lc);
+    uniq.push(s);
+  }
+  return uniq.join(", ");
+}
+
 /**
  * Shared Emby/Jellyfin REST client.
  * Emby: X-Emby-Token + api_key query (legacy, still widely used).
@@ -1011,6 +1057,7 @@ class EmbyJellyfinBase {
       medCard.playerLocal = localPlayer;
 
       medCard.genre = await util.emptyIfNull(item.Genres);
+      medCard.tags = extractEmbyTags(item);
       medCard.summary = item.Overview || "";
       medCard.cast = util.formatCastFromEmbyPeople(item.People);
       medCard.directors = util.formatDirectorsFromEmbyPeople(item.People);
@@ -1876,6 +1923,7 @@ class EmbyJellyfinBase {
 
     medCard.year = md.ProductionYear;
     medCard.genre = await util.emptyIfNull(md.Genres);
+    medCard.tags = extractEmbyTags(md);
     medCard.summary = md.Overview || "";
     medCard.cast = util.formatCastFromEmbyPeople(md.People);
     medCard.directors = util.formatDirectorsFromEmbyPeople(md.People);
