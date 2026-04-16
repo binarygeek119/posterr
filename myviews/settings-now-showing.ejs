@@ -64,6 +64,7 @@
             <div class="alert alert-<%= notice.ok ? "success" : "danger" %>"><%= notice.text %></div>
           <% } %>
           <h4 class="mb-3">Now Showing movie list</h4>
+          <p class="small mb-3"><a href="<%=baseUrl%>/now-showing" target="_blank" rel="noopener">Open dedicated Now Showing view</a></p>
           <p class="text-muted small">This page uses its own database and powers the <code><%=baseUrl%>/now-showing</code> screen view.</p>
           <h5 class="mt-4">Home poster carousel</h5>
           <p class="text-muted small mb-3">Optional: show your saved list as slides on the main Posterr page (<code><%=baseUrl%>/</code>). Requires at least one movie below with banner and logo (TMDB).</p>
@@ -159,18 +160,26 @@
             <h6 class="text-muted text-uppercase small mb-2">Auto page cycle</h6>
             <div class="form-check mb-3">
               <input type="checkbox" class="form-check-input" id="nsPageCycleEnabled" name="enableNowShowingPageCycle" value="true" <%= settings.enableNowShowingPageCycle === "true" ? "checked" : "" %>>
-              <label class="form-check-label" for="nsPageCycleEnabled">Automatically switch between Home and <code>/now-showing</code></label>
+              <label class="form-check-label" for="nsPageCycleEnabled">Automatically switch between Home and a dedicated screen (the browser address stays on Home)</label>
+            </div>
+            <div class="form-group mb-3">
+              <label for="homePageCycleDedicatedView">Dedicated screen</label>
+              <select class="form-control" id="homePageCycleDedicatedView" name="homePageCycleDedicatedView">
+                <option value="now-showing" <%= (typeof settings.homePageCycleDedicatedView === "undefined" || settings.homePageCycleDedicatedView !== "ads") ? "selected" : "" %>>Now Showing (<code>/now-showing</code>)</option>
+                <option value="ads" <%= settings.homePageCycleDedicatedView === "ads" ? "selected" : "" %>>Ads (<code>/ads</code>)</option>
+              </select>
+              <small class="form-text text-muted">Shown in a full-page layer over the poster deck; the URL bar does not change to this path.</small>
             </div>
             <div class="form-row">
               <div class="col-md-6 mb-3">
-                <label for="nsPageCycleEveryMins">Go to <code>/now-showing</code> every (minutes)</label>
+                <label for="nsPageCycleEveryMins">Show dedicated screen every (minutes)</label>
                 <input type="number" class="form-control" id="nsPageCycleEveryMins" name="nowShowingPageCycleEveryMins" min="1" max="1440" value="<%= typeof settings.nowShowingPageCycleEveryMins !== 'undefined' ? settings.nowShowingPageCycleEveryMins : 30 %>">
-                <small class="form-text text-muted">Home slideshow duration before switching to <code>/now-showing</code>.</small>
+                <small class="form-text text-muted">How long the Home poster slideshow runs before the dedicated screen appears again.</small>
               </div>
               <div class="col-md-6 mb-3">
-                <label for="nsPageCycleStayMins">Stay on <code>/now-showing</code> for (minutes)</label>
+                <label for="nsPageCycleStayMins">Stay on dedicated screen for (minutes)</label>
                 <input type="number" class="form-control" id="nsPageCycleStayMins" name="nowShowingPageCycleStayMins" min="1" max="120" value="<%= typeof settings.nowShowingPageCycleStayMins !== 'undefined' ? settings.nowShowingPageCycleStayMins : 5 %>">
-                <small class="form-text text-muted">After this time, the screen returns to Home automatically.</small>
+                <small class="form-text text-muted">After this time, Home posters are shown again (same URL as Home).</small>
               </div>
             </div>
             <button type="submit" class="btn btn-primary">Save screen options</button>

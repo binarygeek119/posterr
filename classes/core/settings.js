@@ -103,6 +103,8 @@ class Settings {
       DEFAULT_SETTINGS.nowShowingPageCycleEveryMins;
     this.nowShowingPageCycleStayMins =
       DEFAULT_SETTINGS.nowShowingPageCycleStayMins;
+    this.homePageCycleDedicatedView =
+      DEFAULT_SETTINGS.homePageCycleDedicatedView;
     this.enableOD = DEFAULT_SETTINGS.enableOD;
     this.enableSonarr = DEFAULT_SETTINGS.enableSonarr;
     this.enableRadarr = DEFAULT_SETTINGS.enableRadarr;
@@ -263,6 +265,9 @@ class Settings {
       if (readSettings.nowShowingPageCycleStayMins === undefined)
         readSettings.nowShowingPageCycleStayMins =
           DEFAULT_SETTINGS.nowShowingPageCycleStayMins;
+      if (readSettings.homePageCycleDedicatedView === undefined)
+        readSettings.homePageCycleDedicatedView =
+          DEFAULT_SETTINGS.homePageCycleDedicatedView;
       if(readSettings.enableOD==undefined) readSettings.enableOD = 'true';
       if(readSettings.enableSonarr==undefined) readSettings.enableSonarr = 'true';
       if(readSettings.enableReadarr==undefined) readSettings.enableReadarr = 'true';
@@ -376,26 +381,32 @@ class Settings {
     return;
   }
 
-  async UpdateSettings(settings){
-
-    if(fs.existsSync("config/settings.json")){
-    // convert JSON object to string (pretty format)
-    const data = JSON.stringify(settings, null, 4);
-
-    
-    // write JSON string to a file
-    fs.writeFileSync("config/settings.json", data, (err) => {
-      if (err) {
-        console.log('Error - writing to settings file',err);
-        throw err;
+  async UpdateSettings(settings) {
+    const settingsPath = "config/settings.json";
+    if (!fs.existsSync(settingsPath)) {
+      return;
+    }
+    let disk = {};
+    try {
+      disk = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
+    } catch (e) {
+      disk = {};
+    }
+    const merged = { ...disk };
+    if (settings && typeof settings === "object") {
+      for (const k of Object.keys(settings)) {
+        const v = settings[k];
+        if (v !== undefined) {
+          merged[k] = v;
+        }
       }
-    });
-  }
-  console.log(`✅ Upgraded settings file
+    }
+    fs.writeFileSync(settingsPath, JSON.stringify(merged, null, 4), "utf8");
+    console.log(`✅ Upgraded settings file
   `);
 
     return;
-  }    
+  }
 
   /**
    * @desc Saves settings after changes from settings page
@@ -772,6 +783,20 @@ class Settings {
         cs.nowShowingPageCycleStayMins !== undefined
           ? cs.nowShowingPageCycleStayMins
           : DEFAULT_SETTINGS.nowShowingPageCycleStayMins;
+    }
+    if (
+      jsonObject.homePageCycleDedicatedView !== undefined &&
+      jsonObject.homePageCycleDedicatedView !== null
+    ) {
+      const v = String(jsonObject.homePageCycleDedicatedView).trim();
+      this.homePageCycleDedicatedView = v === "ads" ? "ads" : "now-showing";
+    } else {
+      this.homePageCycleDedicatedView =
+        cs.homePageCycleDedicatedView !== undefined
+          ? cs.homePageCycleDedicatedView === "ads"
+            ? "ads"
+            : "now-showing"
+          : DEFAULT_SETTINGS.homePageCycleDedicatedView;
     }
     if (jsonObject.enableOD) this.enableOD = jsonObject.enableOD;
     else this.enableOD = "false";

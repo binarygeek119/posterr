@@ -97,6 +97,8 @@ const DEFAULT_SETTINGS = {
   nowShowingPageCycleEveryMins: 30,
   /** Minutes to stay on /now-showing before returning home (1–120). */
   nowShowingPageCycleStayMins: 5,
+  /** When home page cycle runs: embed this dedicated view in an iframe (URL stays on `/`). */
+  homePageCycleDedicatedView: "now-showing",
   enableOD: "true",
   enableSonarr: "true",
   enableRadarr: "true",

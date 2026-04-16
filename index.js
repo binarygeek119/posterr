@@ -3281,6 +3281,10 @@ app.get(BASEURL + "/", (req, res) => {
       loadedSettings && loadedSettings.nowShowingPageCycleStayMins !== undefined
         ? loadedSettings.nowShowingPageCycleStayMins
         : DEFAULT_SETTINGS.nowShowingPageCycleStayMins,
+    homePageCycleDedicatedView:
+      loadedSettings && loadedSettings.homePageCycleDedicatedView === "ads"
+        ? "ads"
+        : "now-showing",
     ...newFeaturesBannerViewData(),
   }); // index refers to index.ejs
   // }
@@ -3295,6 +3299,8 @@ app.get(BASEURL + "/getcards", (req, res) => {
 });
 
 app.get(BASEURL + "/now-showing", (req, res) => {
+  const cycleEmbed =
+    String((req.query && req.query.cycleEmbed) || "").trim() === "1";
   res.render("now-showing", {
     baseUrl: BASEURL,
     hasConfig: setng.GetChanged(),
@@ -3309,6 +3315,7 @@ app.get(BASEURL + "/now-showing", (req, res) => {
       loadedSettings && loadedSettings.nowShowingPageCycleStayMins !== undefined
         ? loadedSettings.nowShowingPageCycleStayMins
         : DEFAULT_SETTINGS.nowShowingPageCycleStayMins,
+    viewHotkeysContext: cycleEmbed ? "embed-now-showing" : "now-showing-page",
     ...newFeaturesBannerViewData(),
   });
 });
@@ -3337,6 +3344,8 @@ app.get(BASEURL + "/ads", (req, res) => {
       : "";
   const adsGlobalBackgroundPath =
     adsGlobalBgRaw.startsWith("/custom/ads-view/") ? adsGlobalBgRaw : "";
+  const adsCycleEmbed =
+    String((req.query && req.query.cycleEmbed) || "").trim() === "1";
   res.render("ads", {
     baseUrl: BASEURL,
     hasConfig: setng.GetChanged(),
@@ -3349,6 +3358,7 @@ app.get(BASEURL + "/ads", (req, res) => {
       (loadedSettings && loadedSettings.adsCurrencyCode) ||
         DEFAULT_SETTINGS.adsCurrencyCode
     ),
+    viewHotkeysContext: adsCycleEmbed ? "embed-ads" : "ads-page",
     ...newFeaturesBannerViewData(),
   });
 });
@@ -4551,23 +4561,35 @@ app.post(BASEURL + "/settings/ads", async (req, res) => {
   if (loadedSettings.password !== undefined && !userData.valid) {
     return res.redirect(302, BASEURL + "/logon");
   }
+  function bodyScalar(body, name) {
+    if (!body || body[name] === undefined || body[name] === null) {
+      return undefined;
+    }
+    const v = body[name];
+    if (Array.isArray(v)) {
+      return v.length ? v[v.length - 1] : undefined;
+    }
+    return v;
+  }
   try {
     loadedSettings.enableAds = req.body.enableAds ? "true" : "false";
     loadedSettings.adsOnly = req.body.adsOnly ? "true" : "false";
     loadedSettings.adsTitleOutline = req.body.adsTitleOutline
       ? "true"
       : "false";
-    const adsEvery = parseInt(req.body.adsEveryPosters, 10);
+    const adsEveryRaw = bodyScalar(req.body, "adsEveryPosters");
+    const adsEvery = parseInt(String(adsEveryRaw ?? "").trim(), 10);
     loadedSettings.adsEveryPosters = isNaN(adsEvery) ? 0 : Math.max(0, adsEvery);
     loadedSettings.adsCurrencyCode = normalizeNowShowingCurrencyCode(
-      req.body.adsCurrencyCode
+      bodyScalar(req.body, "adsCurrencyCode")
     );
-    const rotAds = parseInt(req.body.adsRotationSeconds, 10);
+    const rotRaw = bodyScalar(req.body, "adsRotationSeconds");
+    const rotAds = parseInt(String(rotRaw ?? "").trim(), 10);
     loadedSettings.adsRotationSeconds = isNaN(rotAds)
       ? DEFAULT_SETTINGS.adsRotationSeconds
       : Math.min(600, Math.max(3, rotAds));
-    const stayRaw = req.body.adsPageStaySeconds;
-    const stayAds = parseInt(stayRaw, 10);
+    const stayRaw = bodyScalar(req.body, "adsPageStaySeconds");
+    const stayAds = parseInt(String(stayRaw ?? "").trim(), 10);
     loadedSettings.adsPageStaySeconds =
       stayRaw === undefined ||
       stayRaw === null ||
@@ -5052,6 +5074,9 @@ app.post(BASEURL + "/settings/now-showing/screen", async (req, res) => {
     loadedSettings.nowShowingPageCycleStayMins = isNaN(stay)
       ? DEFAULT_SETTINGS.nowShowingPageCycleStayMins
       : Math.max(1, Math.min(120, stay));
+    const dedicatedRaw = String(req.body.homePageCycleDedicatedView || "").trim();
+    loadedSettings.homePageCycleDedicatedView =
+      dedicatedRaw === "ads" ? "ads" : "now-showing";
     await setng.UpdateSettings(loadedSettings);
     req.session.nowShowingNotice = {
       ok: true,

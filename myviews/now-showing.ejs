@@ -585,9 +585,20 @@
     (function () {
       var nsCycleEnabled = <%- JSON.stringify(String(typeof nowShowingPageCycleEnabled !== "undefined" ? nowShowingPageCycleEnabled : "false")) %> === "true";
       var nsCycleStayMins = parseInt(<%- JSON.stringify(String(typeof nowShowingPageCycleStayMins !== "undefined" ? nowShowingPageCycleStayMins : "5")) %>, 10);
+      var nsUrlQs = new URLSearchParams(window.location.search || "");
+      var nsCycleEmbed = nsUrlQs.get("cycleEmbed") === "1";
       if (nsCycleEnabled && Number.isFinite(nsCycleStayMins) && nsCycleStayMins > 0) {
         setTimeout(function () {
-          window.location.href = <%- JSON.stringify(baseUrl + "/") %>;
+          if (nsCycleEmbed && window.parent && window.parent !== window) {
+            try {
+              window.parent.postMessage(
+                { type: "posterr-home-cycle-embed-close" },
+                window.location.origin
+              );
+            } catch (e) {}
+          } else {
+            window.location.href = <%- JSON.stringify(baseUrl + "/") %>;
+          }
         }, nsCycleStayMins * 60 * 1000);
       }
       var cardsUrl = <%- JSON.stringify(baseUrl + "/now-showing/data") %>;
@@ -1542,5 +1553,6 @@
       setInterval(loadMovies, 15000);
     })();
   </script>
+  <%- include('posterr-view-hotkeys.ejs', { baseUrl, viewHotkeysContext }) %>
 </body>
 </html>

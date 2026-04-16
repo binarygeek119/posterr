@@ -22,15 +22,26 @@
       width: 100%;
       height: 100%;
       background-color: #000;
+    }
+    /* Dedicated /ads-view backdrop: blur only applies to this layer, not CSS bg on .ads-stage */
+    .ads-global-bg-layer {
+      position: absolute;
+      inset: -12px;
+      z-index: 0;
       background-size: cover;
       background-position: center center;
       background-repeat: no-repeat;
+      filter: blur(5px);
+      transform: scale(1.06);
+      transform-origin: center center;
+      pointer-events: none;
     }
     .ads-slides {
       position: absolute;
       inset: 0;
       width: 100%;
       height: 100%;
+      z-index: 1;
     }
     .ad-slide {
       position: absolute;
@@ -173,32 +184,12 @@
       font-size: clamp(0.9rem, 2.2vmin, 1rem);
       padding: 1rem;
     }
-    .ads-timing-hint {
-      position: fixed;
-      top: clamp(0.5rem, 2vh, 1rem);
-      right: clamp(0.5rem, 2vw, 1rem);
-      z-index: 6;
-      max-width: min(30rem, calc(100vw - 1.5rem));
-      margin: 0;
-      padding: 0.35rem 0.65rem;
-      border-radius: 0.35rem;
-      font-size: clamp(0.68rem, 1.5vmin, 0.85rem);
-      font-weight: 500;
-      line-height: 1.35;
-      white-space: pre-line;
-      color: rgba(245, 246, 247, 0.92);
-      background: rgba(0, 0, 0, 0.55);
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      backdrop-filter: blur(4px);
-      text-align: right;
-      pointer-events: none;
-    }
   </style>
 </head>
 <body>
   <%- include('new-features-banner.ejs') %>
   <main id="adsStage" class="ads-stage">
-    <p id="adsTimingHint" class="ads-timing-hint" aria-live="polite"></p>
+    <div id="adsGlobalBgLayer" class="ads-global-bg-layer" aria-hidden="true"></div>
     <section id="adsSlides" class="ads-slides"></section>
   </main>
   <script>
@@ -214,29 +205,18 @@
       var slideMs = Math.max(3000, (parseInt(<%- JSON.stringify(String(typeof adsRotationSeconds !== "undefined" ? adsRotationSeconds : 10)) %>, 10) || 10) * 1000);
       var slidesEl = document.getElementById("adsSlides");
       var adsStageEl = document.getElementById("adsStage");
+      var adsGlobalBgLayerEl = document.getElementById("adsGlobalBgLayer");
       var cycleTimer = null;
       var currentIndex = 0;
       var pageReturnTimer = null;
       var lastScheduledStaySec = null;
-
-      function clampRotationSec(raw) {
-        var n = parseInt(raw, 10);
-        if (isNaN(n)) n = 10;
-        return Math.min(600, Math.max(3, n));
-      }
-
-      function formatRotationHuman(sec) {
-        sec = clampRotationSec(sec);
-        if (sec < 60) {
-          return sec + " second" + (sec === 1 ? "" : "s");
-        }
-        var m = Math.floor(sec / 60);
-        var s = sec % 60;
-        var parts = [];
-        if (m > 0) parts.push(m + " minute" + (m === 1 ? "" : "s"));
-        if (s > 0) parts.push(s + " second" + (s === 1 ? "" : "s"));
-        return parts.join(" and ");
-      }
+      var adsUrlQs = new URLSearchParams(window.location.search || "");
+      var adsCycleEmbed = adsUrlQs.get("cycleEmbed") === "1";
+      var adsCycleEmbedStayMins = (function () {
+        var n = parseInt(adsUrlQs.get("cycleStayMins") || "0", 10);
+        return Number.isFinite(n) && n > 0 ? n : 0;
+      })();
+      var adsEmbedReturnTimer = null;
 
       function clampPageStay(raw) {
         if (raw === undefined || raw === null || raw === "") return 0;
@@ -245,48 +225,30 @@
         return Math.min(86400, Math.max(30, n));
       }
 
-      function formatPageStayHuman(sec) {
-        sec = Math.floor(Number(sec)) || 0;
-        if (sec < 60) {
-          return sec + " second" + (sec === 1 ? "" : "s");
-        }
-        if (sec < 3600) {
-          var m = Math.floor(sec / 60);
-          var s = sec % 60;
-          var parts = [];
-          if (m > 0) parts.push(m + " minute" + (m === 1 ? "" : "s"));
-          if (s > 0) parts.push(s + " second" + (s === 1 ? "" : "s"));
-          return parts.join(" and ");
-        }
-        var h = Math.floor(sec / 3600);
-        var rem = sec % 3600;
-        var m = Math.floor(rem / 60);
-        var s = rem % 60;
-        var hparts = [h + " hour" + (h === 1 ? "" : "s")];
-        if (m > 0) hparts.push(m + " minute" + (m === 1 ? "" : "s"));
-        if (s > 0) hparts.push(s + " second" + (s === 1 ? "" : "s"));
-        return hparts.join(", ");
-      }
-
-      function updateTimingHints(rotSec, pageStayRaw) {
-        var el = document.getElementById("adsTimingHint");
-        if (!el) return;
-        var rot = clampRotationSec(rotSec);
-        var line1 =
-          "Each ad stays on screen for " +
-          formatRotationHuman(rot) +
-          ". After that, the slideshow rotates to the next ad and continues through the others in turn.";
-        var stay = clampPageStay(pageStayRaw);
-        var line2 =
-          stay > 0
-            ? "The full /ads page returns to the home posters after " +
-              formatPageStayHuman(stay) +
-              "."
-            : "The dedicated Ads page stays open until you leave manually.";
-        el.textContent = line1 + "\n\n" + line2;
-      }
-
       function scheduleReturnToPosters(pageStayRaw) {
+        if (
+          adsCycleEmbed &&
+          window.parent &&
+          window.parent !== window &&
+          adsCycleEmbedStayMins > 0
+        ) {
+          if (pageReturnTimer) {
+            clearTimeout(pageReturnTimer);
+            pageReturnTimer = null;
+          }
+          lastScheduledStaySec = null;
+          if (adsEmbedReturnTimer) return;
+          adsEmbedReturnTimer = setTimeout(function () {
+            adsEmbedReturnTimer = null;
+            try {
+              window.parent.postMessage(
+                { type: "posterr-home-cycle-embed-close" },
+                window.location.origin
+              );
+            } catch (e) {}
+          }, adsCycleEmbedStayMins * 60 * 1000);
+          return;
+        }
         var stay = clampPageStay(pageStayRaw);
         if (!stay) {
           if (pageReturnTimer) {
@@ -304,23 +266,17 @@
         }, stay * 1000);
       }
 
-      updateTimingHints(
-        parseInt(<%- JSON.stringify(String(typeof adsRotationSeconds !== "undefined" ? adsRotationSeconds : 10)) %>, 10) || 10,
-        <%- JSON.stringify(
-          typeof adsPageStaySeconds !== "undefined" && adsPageStaySeconds !== null
-            ? Number(adsPageStaySeconds)
-            : 0
-        ) %>
-      );
-
       function applyGlobalStageBackground(pathStr) {
-        if (!adsStageEl) return;
         var p = pathStr == null ? "" : String(pathStr).trim();
+        if (adsStageEl) {
+          adsStageEl.style.backgroundImage = "";
+        }
+        if (!adsGlobalBgLayerEl) return;
         if (p) {
-          adsStageEl.style.backgroundImage =
+          adsGlobalBgLayerEl.style.backgroundImage =
             "url(" + JSON.stringify(assetBase + p) + ")";
         } else {
-          adsStageEl.style.backgroundImage = "";
+          adsGlobalBgLayerEl.style.backgroundImage = "";
         }
       }
 
@@ -502,10 +458,6 @@
             applyGlobalStageBackground(
               (payload && payload.globalBackgroundPath) || ""
             );
-            updateTimingHints(
-              payload && payload.rotationSeconds,
-              payload && payload.pageStaySeconds
-            );
             scheduleReturnToPosters(payload && payload.pageStaySeconds);
             render(
               (payload && payload.items) || [],
@@ -525,5 +477,6 @@
       window.addEventListener("resize", updateInfoInsets, { passive: true });
     })();
   </script>
+  <%- include('posterr-view-hotkeys.ejs', { baseUrl, viewHotkeysContext }) %>
 </body>
 </html>

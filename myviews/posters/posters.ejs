@@ -14,6 +14,9 @@
     <div class="carousel-inner cardHolder h-100 w-100 ">
     </div>
 </div>
+<div id="homeCycleEmbedWrap" class="home-cycle-embed-wrap" style="display:none;position:fixed;inset:0;z-index:20000;background:#000;">
+  <iframe id="homeCycleEmbedFrame" title="Dedicated screen" style="position:absolute;inset:0;width:100%;height:100%;border:0;" loading="eager"></iframe>
+</div>
 
 <script language='javascript'>
 
@@ -400,11 +403,97 @@ function startInactivityCheck(element, delay, callbackInactivity, callbackActive
     getCards();
     var nsCycleEnabled = <%- JSON.stringify(String(typeof nowShowingPageCycleEnabled !== "undefined" ? nowShowingPageCycleEnabled : "false")) %> === "true";
     var nsCycleEveryMins = parseInt(<%- JSON.stringify(String(typeof nowShowingPageCycleEveryMins !== "undefined" ? nowShowingPageCycleEveryMins : "30")) %>, 10);
-    if (nsCycleEnabled && Number.isFinite(nsCycleEveryMins) && nsCycleEveryMins > 0) {
+    var nsCycleStayMins = parseInt(<%- JSON.stringify(String(typeof nowShowingPageCycleStayMins !== "undefined" ? nowShowingPageCycleStayMins : "5")) %>, 10);
+    var homeCycleDedicatedView = <%- JSON.stringify(String(typeof homePageCycleDedicatedView !== "undefined" ? homePageCycleDedicatedView : "now-showing")) %>;
+    var HOME_CYCLE_EMBED_MSG = "posterr-home-cycle-embed-close";
+    var VIEW_SWITCH_MSG = "posterr-view-switch";
+
+    function openDedicatedEmbed(path) {
+      if (nowShowingCycleTimer) {
+        clearTimeout(nowShowingCycleTimer);
+        nowShowingCycleTimer = null;
+      }
+      var wrap = document.getElementById("homeCycleEmbedWrap");
+      var frame = document.getElementById("homeCycleEmbedFrame");
+      if (!wrap || !frame) return;
+      var stay = Number.isFinite(nsCycleStayMins) && nsCycleStayMins > 0 ? nsCycleStayMins : 5;
+      var url = "<%=baseUrl%>" + path + "?cycleEmbed=1&_k=" + Date.now();
+      if (path === "/ads") {
+        url += "&cycleStayMins=" + encodeURIComponent(String(stay));
+      }
+      frame.src = url;
+      wrap.style.display = "block";
+    }
+
+    function scheduleHomeCycleEmbedOpen() {
+      if (!nsCycleEnabled || !Number.isFinite(nsCycleEveryMins) || nsCycleEveryMins <= 0) return;
+      if (nowShowingCycleTimer) clearTimeout(nowShowingCycleTimer);
       var ms = nsCycleEveryMins * 60 * 1000;
-      nowShowingCycleTimer = setTimeout(function () {
-        window.location.href = "<%=baseUrl%>/now-showing";
-      }, ms);
+      nowShowingCycleTimer = setTimeout(openHomeCycleEmbed, ms);
+    }
+
+    function closeHomeCycleEmbed() {
+      var wrap = document.getElementById("homeCycleEmbedWrap");
+      var frame = document.getElementById("homeCycleEmbedFrame");
+      if (wrap) wrap.style.display = "none";
+      if (frame) frame.src = "about:blank";
+      nowShowingCycleTimer = null;
+      scheduleHomeCycleEmbedOpen();
+    }
+
+    window.addEventListener("message", function (ev) {
+      if (ev.origin !== window.location.origin) return;
+      var d = ev.data;
+      if (d && d.type === HOME_CYCLE_EMBED_MSG) {
+        closeHomeCycleEmbed();
+        return;
+      }
+      if (d && d.type === VIEW_SWITCH_MSG && d.view) {
+        if (d.view === "posters") {
+          closeHomeCycleEmbed();
+        } else if (d.view === "now-showing") {
+          openDedicatedEmbed("/now-showing");
+        } else if (d.view === "ads") {
+          openDedicatedEmbed("/ads");
+        }
+      }
+    });
+
+    function openHomeCycleEmbed() {
+      openDedicatedEmbed(homeCycleDedicatedView === "ads" ? "/ads" : "/now-showing");
+      nowShowingCycleTimer = null;
+    }
+
+    window.__posterrHomeViewSwitch = function (digitKey) {
+      if (digitKey === "1") {
+        closeHomeCycleEmbed();
+        return;
+      }
+      if (digitKey === "2") {
+        openDedicatedEmbed("/now-showing");
+        return;
+      }
+      if (digitKey === "3") {
+        openDedicatedEmbed("/ads");
+      }
+    };
+
+    document.addEventListener(
+      "keydown",
+      function (ev) {
+        if (ev.defaultPrevented || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+        var t = ev.target && ev.target.tagName && ev.target.tagName.toLowerCase();
+        if (t === "input" || t === "textarea" || t === "select" || (ev.target && ev.target.isContentEditable)) return;
+        if (ev.key !== "1" && ev.key !== "2" && ev.key !== "3") return;
+        if (typeof window.__posterrHomeViewSwitch !== "function") return;
+        ev.preventDefault();
+        window.__posterrHomeViewSwitch(ev.key);
+      },
+      true
+    );
+
+    if (nsCycleEnabled && Number.isFinite(nsCycleEveryMins) && nsCycleEveryMins > 0) {
+      scheduleHomeCycleEmbedOpen();
     }
   });
 
