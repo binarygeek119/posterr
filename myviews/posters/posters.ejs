@@ -155,6 +155,7 @@ function startInactivityCheck(element, delay, callbackInactivity, callbackActive
   var connCheckClock;
   var connOk = true;
   var sleeping = false;
+  var getCardsPath = "<%=baseUrl%>/getcards";
   var getCardsRetryTimer = null;
   var getCardsFailCount = 0;
   var nowShowingCycleTimer = null;
@@ -477,7 +478,7 @@ function startInactivityCheck(element, delay, callbackInactivity, callbackActive
     var postersQs = new URLSearchParams(window.location.search || "");
     var inHubEmbed = postersQs.get("hubEmbed") === "1";
     var isStandalonePosters = !inHubEmbed;
-    var getCardsPath = "<%=baseUrl%>/getcards" + (inHubEmbed ? "?postersOnly=1" : "");
+    getCardsPath = "<%=baseUrl%>/getcards" + (inHubEmbed ? "?postersOnly=1" : "");
     var viewHotkeysEnabled = <%- JSON.stringify(String(typeof viewHotkeysEnabled !== "undefined" ? viewHotkeysEnabled : "true")) %> === "true";
     // initial load of cards and connection check timer every 5 seconds
     setInterval(connCheck,5000);
