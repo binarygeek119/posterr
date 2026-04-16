@@ -158,6 +158,13 @@ function startInactivityCheck(element, delay, callbackInactivity, callbackActive
   var getCardsPath = "<%=baseUrl%>/getcards";
   var getCardsRetryTimer = null;
   var getCardsFailCount = 0;
+  function resolveGetCardsPath() {
+    if (typeof getCardsPath === "string" && getCardsPath.trim() !== "") {
+      return getCardsPath;
+    }
+    return "<%=baseUrl%>/getcards";
+  }
+
   var nowShowingCycleTimer = null;
   var counter;
   var curPlayID = 1;
@@ -294,7 +301,7 @@ function startInactivityCheck(element, delay, callbackInactivity, callbackActive
   function getCards(){
     //console.log('getting cards');
     const xhr = new XMLHttpRequest();
-    xhr.open('GET', getCardsPath);
+    xhr.open('GET', resolveGetCardsPath());
     xhr.timeout = 10000;
 
     // set response format
@@ -348,7 +355,7 @@ function startInactivityCheck(element, delay, callbackInactivity, callbackActive
   function updateFirstCard(){
     //console.log('getting cards');
     const xhr = new XMLHttpRequest();
-    xhr.open('GET', getCardsPath);
+    xhr.open('GET', resolveGetCardsPath());
 
     // set response format
     xhr.responseType = 'json';

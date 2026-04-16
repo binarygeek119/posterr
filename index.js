@@ -537,6 +537,10 @@ var dir = "./public/custom";
 if (!fs.existsSync(dir)) {
   fs.mkdirSync(dir, { recursive: true });
 }
+const customCssPath = path.join(dir, "custom.css");
+if (!fs.existsSync(customCssPath)) {
+  fs.writeFileSync(customCssPath, "");
+}
 
 fs.mkdirSync(CUSTOM_PICTURES_ROOT, { recursive: true });
 fs.mkdirSync(path.join(CUSTOM_PICTURES_ROOT, "default"), { recursive: true });
