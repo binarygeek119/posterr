@@ -16,7 +16,10 @@
 ![Slides](https://github.com/petersem/posterr/blob/master/doco/posterr.jpg?raw=true)
 ![Awtrix](https://github.com/petersem/posterr/blob/master/doco/awtrix.gif?raw=true)
 
-**Documentation and community (upstream):** [Latest changes](https://github.com/petersem/posterr/wiki/Latest-changes) · [Known issues](https://github.com/petersem/posterr/wiki/Known-Issues) · [Discord](https://discord.gg/TcnEkMEf9J) (limited support). **Default settings password:** `raidisnotabackup`
+Join the Posterr Discord channel to get updates and limited support: [https://discord.gg/TcnEkMEf9J](https://discord.gg/TcnEkMEf9J).  
+Please do not ask the original developer for support when using this fork version of Posterr.  
+For fork support, use GitHub: [https://github.com/binarygeek119/posterr](https://github.com/binarygeek119/posterr).  
+**Default settings password:** `raidisnotabackup`
 
 ---
 ## Features
@@ -234,8 +237,9 @@ Should you encounter a problem, the solution may be listed [HERE](https://github
 
 ---
 ## Support
- - **This fork:** open an issue on [binarygeek119/posterr](https://github.com/binarygeek119/posterr/issues).
- - **Upstream Posterr:** [Discord](https://discord.gg/TcnEkMEf9J) (limited); issues on [petersem/posterr](https://github.com/petersem/posterr/issues) for vanilla Posterr.
+ - Join the Posterr Discord channel to get updates and limited support: [https://discord.gg/TcnEkMEf9J](https://discord.gg/TcnEkMEf9J).
+ - Do not ask the original developer for support when using this fork version of Posterr.
+ - For fork support, use GitHub: [https://github.com/binarygeek119/posterr](https://github.com/binarygeek119/posterr).
 
 ---
 ### Support my efforts and continued development 
