@@ -56,6 +56,8 @@
       var nsCycleEveryMins = parseInt(<%- JSON.stringify(String(typeof nowShowingPageCycleEveryMins !== "undefined" ? nowShowingPageCycleEveryMins : "30")) %>, 10);
       var nsCycleStayMins = parseInt(<%- JSON.stringify(String(typeof nowShowingPageCycleStayMins !== "undefined" ? nowShowingPageCycleStayMins : "5")) %>, 10);
       var defaultDedicated = <%- JSON.stringify(String(typeof homePageCycleDedicatedView !== "undefined" ? homePageCycleDedicatedView : "now-showing")) %>;
+      var homeNowShowingOnly = <%- JSON.stringify(String(typeof homeNowShowingOnly !== "undefined" ? homeNowShowingOnly : "false")) %> === "true";
+      var homeAdsOnly = <%- JSON.stringify(String(typeof homeAdsOnly !== "undefined" ? homeAdsOnly : "false")) %> === "true";
       var HOME_CYCLE_EMBED_MSG = "posterr-home-cycle-embed-close";
       var VIEW_SWITCH_MSG = "posterr-view-switch";
 
@@ -134,8 +136,16 @@
       ensureSrc(postersFrame, postersUrl);
       if (nowShowingFrame) nowShowingFrame.setAttribute("src", "about:blank");
       if (adsFrame) adsFrame.setAttribute("src", "about:blank");
-      activateView("posters");
-      scheduleCycleOpen();
+      if (homeNowShowingOnly) {
+        activateView("now-showing");
+        clearCycleTimer();
+      } else if (homeAdsOnly) {
+        activateView("ads");
+        clearCycleTimer();
+      } else {
+        activateView("posters");
+        scheduleCycleOpen();
+      }
 
       window.addEventListener("message", function (ev) {
         if (ev.origin !== window.location.origin) return;

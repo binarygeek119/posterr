@@ -3395,6 +3395,13 @@ app.get(BASEURL + "/", (req, res) => {
   const viewHotkeysEnabled =
     loadedSettings &&
     String(loadedSettings.enableViewHotkeys).toLowerCase() === "true";
+  const homeNowShowingOnly =
+    loadedSettings &&
+    String(loadedSettings.nowShowingListOnly).toLowerCase() === "true";
+  const homeAdsOnly =
+    loadedSettings &&
+    String(loadedSettings.enableAds).toLowerCase() === "true" &&
+    String(loadedSettings.adsOnly).toLowerCase() === "true";
   const everyMins =
     loadedSettings && loadedSettings.nowShowingPageCycleEveryMins !== undefined
       ? loadedSettings.nowShowingPageCycleEveryMins
@@ -3409,6 +3416,8 @@ app.get(BASEURL + "/", (req, res) => {
     nowShowingPageCycleEveryMins: everyMins,
     nowShowingPageCycleStayMins: stayMins,
     homePageCycleDedicatedView: homeCycleDedicatedView,
+    homeNowShowingOnly: homeNowShowingOnly ? "true" : "false",
+    homeAdsOnly: homeAdsOnly ? "true" : "false",
     viewHotkeysEnabled: viewHotkeysEnabled ? "true" : "false",
     ...newFeaturesBannerViewData(),
   });
