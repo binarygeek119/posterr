@@ -4,6 +4,7 @@
 > **About this repository**  
 > This is an **AI-assisted fork** of [Posterr](https://github.com/petersem/posterr) by **binarygeek119**. Upstream owns the original design and core product; this repo adds the features in **New in this fork** below.  
 > **Source:** [github.com/binarygeek119/posterr](https://github.com/binarygeek119/posterr) · **Docker image:** [`binarygeek119/postarr`](https://hub.docker.com/r/binarygeek119/postarr) (`:latest`)
+> **Sister project:** [binarygeek119/ubuntudisplayos](https://github.com/binarygeek119/ubuntudisplayos) for Ubuntu-based multi-display kiosk hosts that pair well with Posterr.
 
 ![GitHub stars](https://img.shields.io/github/stars/binarygeek119/posterr?style=flat)
 ![Fork version](https://img.shields.io/github/package-json/v/binarygeek119/posterr?label=version&logoColor=blue)
