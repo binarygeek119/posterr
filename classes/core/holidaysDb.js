@@ -15,6 +15,9 @@ CREATE TABLE IF NOT EXISTS holiday_rules (
   nth_value TEXT NOT NULL DEFAULT '4',
   span_days INTEGER NOT NULL DEFAULT 0,
   tag_text TEXT NOT NULL DEFAULT '',
+  title_keywords TEXT NOT NULL DEFAULT '',
+  plot_keywords TEXT NOT NULL DEFAULT '',
+  match_mode TEXT NOT NULL DEFAULT 'or',
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT '',
   updated_at TEXT NOT NULL DEFAULT ''
@@ -33,6 +36,31 @@ function persistDb() {
   fs.writeFileSync(DB_FILE, Buffer.from(_db.export()));
 }
 
+function ensureExtraColumns() {
+  assertDb();
+  const cols = new Set();
+  const s = _db.prepare("PRAGMA table_info(holiday_rules)");
+  while (s.step()) {
+    const r = s.getAsObject();
+    cols.add(String(r.name || "").toLowerCase());
+  }
+  s.free();
+  let changed = false;
+  if (!cols.has("plot_keywords")) {
+    _db.run("ALTER TABLE holiday_rules ADD COLUMN plot_keywords TEXT NOT NULL DEFAULT ''");
+    changed = true;
+  }
+  if (!cols.has("title_keywords")) {
+    _db.run("ALTER TABLE holiday_rules ADD COLUMN title_keywords TEXT NOT NULL DEFAULT ''");
+    changed = true;
+  }
+  if (!cols.has("match_mode")) {
+    _db.run("ALTER TABLE holiday_rules ADD COLUMN match_mode TEXT NOT NULL DEFAULT 'or'");
+    changed = true;
+  }
+  if (changed) persistDb();
+}
+
 async function initHolidaysDb() {
   if (_db) return;
   const initSqlJs = require("sql.js");
@@ -46,6 +74,7 @@ async function initHolidaysDb() {
   if (fs.existsSync(DB_FILE)) _db = new SQL.Database(fs.readFileSync(DB_FILE));
   else _db = new SQL.Database();
   _db.exec(SCHEMA_SQL);
+  ensureExtraColumns();
   if (!fs.existsSync(DB_FILE)) persistDb();
 }
 
@@ -65,6 +94,9 @@ function listRules() {
       nth: String(r.nth_value || "4"),
       spanDays: Number(r.span_days) || 0,
       tag: String(r.tag_text || ""),
+      titleKeywords: String(r.title_keywords || ""),
+      plotKeywords: String(r.plot_keywords || ""),
+      matchMode: String(r.match_mode || "or"),
       sortOrder: Number(r.sort_order) || 0,
     });
   }
@@ -77,7 +109,7 @@ function replaceRules(rules) {
   const list = Array.isArray(rules) ? rules : [];
   const now = new Date().toISOString();
   const ins = _db.prepare(
-    "INSERT INTO holiday_rules (mode, start_md, end_md, month_num, weekday_num, nth_value, span_days, tag_text, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO holiday_rules (mode, start_md, end_md, month_num, weekday_num, nth_value, span_days, tag_text, title_keywords, plot_keywords, match_mode, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   );
   try {
     _db.run("BEGIN");
@@ -93,6 +125,9 @@ function replaceRules(rules) {
         String(r.nth || "4"),
         Number(r.spanDays) || 0,
         String(r.tag || ""),
+        String(r.titleKeywords || ""),
+        String(r.plotKeywords || ""),
+        String(r.matchMode || "or"),
         i,
         now,
         now,

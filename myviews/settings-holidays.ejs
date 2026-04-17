@@ -61,7 +61,7 @@
             <% } %>
             <% var _holidayRules = Array.isArray(holidayRules) ? holidayRules : []; %>
             <form method="post" action="<%=baseUrl%>/settings/holidays">
-              <p class="text-muted mb-2">Add seasonal rules and match tags. When a rule is active, media that matches the tag appears more often on Home and <code>/now-showing</code>.</p>
+              <p class="text-muted mb-2">Add seasonal rules and match by tag, title keywords, and/or plot keywords. When a rule is active, media that matches the rule appears more often on Home and <code>/now-showing</code>.</p>
               <small class="form-text text-muted mb-3">Supports fixed ranges (month/day only) and dynamic dates (example: 4th Thursday in November for Thanksgiving).</small>
               <div id="holidayRulesWrap">
                 <% if (_holidayRules.length) { %>
@@ -124,6 +124,22 @@
                       <div class="col-md-4 mb-2">
                         <label class="small mb-1">Tag contains</label>
                         <input type="text" class="form-control form-control-sm" name="holidayTag" value="<%= String(r.tag || "") %>" maxlength="80" placeholder="christmas, halloween, easter">
+                      </div>
+                      <div class="col-md-4 mb-2">
+                        <label class="small mb-1">Plot keywords (comma separated)</label>
+                        <input type="text" class="form-control form-control-sm" name="holidayPlotKeywords" value="<%= String(r.plotKeywords || "") %>" maxlength="240" placeholder="christmas, santa, reindeer">
+                      </div>
+                      <div class="col-md-4 mb-2">
+                        <label class="small mb-1">Title keywords (comma separated)</label>
+                        <input type="text" class="form-control form-control-sm" name="holidayTitleKeywords" value="<%= String(r.titleKeywords || "") %>" maxlength="240" placeholder="christmas, xmas, noel">
+                      </div>
+                      <div class="col-md-2 mb-2">
+                        <% var _matchMode = String(r.matchMode || "or").toLowerCase() === "and" ? "and" : "or"; %>
+                        <label class="small mb-1">Match mode</label>
+                        <select class="form-control form-control-sm" name="holidayMatchMode">
+                          <option value="or" <%= _matchMode === "or" ? "selected" : "" %>>Any (OR)</option>
+                          <option value="and" <%= _matchMode === "and" ? "selected" : "" %>>All (AND)</option>
+                        </select>
                       </div>
                       <div class="col-md-1 mb-2 text-right">
                         <button type="button" class="btn btn-sm btn-outline-danger js-remove-holiday-row">&times;</button>
@@ -194,6 +210,21 @@
             '<div class="col-md-4 mb-2">' +
               '<label class="small mb-1">Tag contains</label>' +
               '<input type="text" class="form-control form-control-sm" name="holidayTag" maxlength="80" placeholder="christmas, halloween, easter">' +
+            '</div>' +
+            '<div class="col-md-4 mb-2">' +
+              '<label class="small mb-1">Plot keywords (comma separated)</label>' +
+              '<input type="text" class="form-control form-control-sm" name="holidayPlotKeywords" maxlength="240" placeholder="christmas, santa, reindeer">' +
+            '</div>' +
+            '<div class="col-md-4 mb-2">' +
+              '<label class="small mb-1">Title keywords (comma separated)</label>' +
+              '<input type="text" class="form-control form-control-sm" name="holidayTitleKeywords" maxlength="240" placeholder="christmas, xmas, noel">' +
+            '</div>' +
+            '<div class="col-md-2 mb-2">' +
+              '<label class="small mb-1">Match mode</label>' +
+              '<select class="form-control form-control-sm" name="holidayMatchMode">' +
+                '<option value="or" selected>Any (OR)</option>' +
+                '<option value="and">All (AND)</option>' +
+              '</select>' +
             '</div>' +
             '<div class="col-md-1 mb-2 text-right">' +
               '<button type="button" class="btn btn-sm btn-outline-danger js-remove-holiday-row">&times;</button>' +

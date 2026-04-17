@@ -3433,13 +3433,13 @@ app.get(BASEURL + "/posters", (req, res) => {
 });
 
 app.get(BASEURL + "/getcards", (req, res) => {
-  const holidayTags = activeHolidayTagsForToday();
+  const holidayRules = activeHolidayRulesForToday();
   const postersOnly =
     String((req.query && req.query.postersOnly) || "").trim() === "1";
   if (!postersOnly) {
-    const cards = boostCardsByHolidayTags(
+    const cards = boostCardsByHolidayRules(
       Array.isArray(globalPage && globalPage.cards) ? globalPage.cards : [],
-      holidayTags
+      holidayRules
     );
     return res.send({
       globalPage: {
@@ -3457,7 +3457,7 @@ app.get(BASEURL + "/getcards", (req, res) => {
         return n !== "ad" && n !== "now showing";
       })
     : [];
-  const boosted = boostCardsByHolidayTags(cards, holidayTags);
+  const boosted = boostCardsByHolidayRules(cards, holidayRules);
   return res.send({
     globalPage: {
       ...globalPage,
@@ -3622,6 +3622,18 @@ function normalizeHolidayMode(raw) {
     : "fixed";
 }
 
+function normalizeHolidayMatchMode(raw) {
+  return String(raw || "").trim().toLowerCase() === "and" ? "and" : "or";
+}
+
+function normalizeHolidayPlotKeywords(raw) {
+  return String(raw || "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+    .slice(0, 20);
+}
+
 function computeNthWeekdayOfMonth(year, monthOneBased, weekday, nth) {
   if (!Number.isFinite(year)) return null;
   const month = Math.max(1, Math.min(12, monthOneBased));
@@ -3654,6 +3666,9 @@ function readHolidayRulesFromSettings() {
     .map((r) => {
       const mode = normalizeHolidayMode(r && r.mode);
       const tag = String((r && r.tag) || "").trim().toLowerCase();
+      const titleKeywords = normalizeHolidayPlotKeywords(r && r.titleKeywords);
+      const plotKeywords = normalizeHolidayPlotKeywords(r && r.plotKeywords);
+      const matchMode = normalizeHolidayMatchMode(r && r.matchMode);
       if (mode === "dynamic") {
         const month = normalizeHolidayInt(r && r.month, 1, 12, 11);
         const weekday = normalizeHolidayInt(r && r.weekday, 0, 6, 4);
@@ -3663,14 +3678,37 @@ function readHolidayRulesFromSettings() {
             ? "last"
             : String(normalizeHolidayInt(nthRaw || "1", 1, 5, 1));
         const spanDays = normalizeHolidayInt(r && r.spanDays, 0, 31, 0);
-        return { mode, month, weekday, nth, spanDays, tag };
+        return {
+          mode,
+          month,
+          weekday,
+          nth,
+          spanDays,
+          tag,
+          titleKeywords,
+          plotKeywords,
+          matchMode,
+        };
       }
       const start = normalizeHolidayMonthDay(r && r.start);
       const end = normalizeHolidayMonthDay(r && r.end);
-      return { mode: "fixed", start, end, tag };
+      return {
+        mode: "fixed",
+        start,
+        end,
+        tag,
+        titleKeywords,
+        plotKeywords,
+        matchMode,
+      };
     })
     .filter((r) => {
-      if (!r.tag) return false;
+      if (
+        !r.tag &&
+        (!Array.isArray(r.titleKeywords) || r.titleKeywords.length === 0) &&
+        (!Array.isArray(r.plotKeywords) || r.plotKeywords.length === 0)
+      )
+        return false;
       if (r.mode === "dynamic") return true;
       return !!(r.start && r.end);
     });
@@ -3682,13 +3720,13 @@ function monthDayInHolidayRange(todayMd, startMd, endMd) {
   return todayMd >= startMd || todayMd <= endMd;
 }
 
-function activeHolidayTagsForToday() {
+function activeHolidayRulesForToday() {
   const now = new Date();
   const todayMd =
     String(now.getMonth() + 1).padStart(2, "0") +
     "-" +
     String(now.getDate()).padStart(2, "0");
-  const active = new Set();
+  const active = [];
   for (const rule of readHolidayRulesFromSettings()) {
     if (rule.mode === "dynamic") {
       const base = computeNthWeekdayOfMonth(
@@ -3709,23 +3747,43 @@ function activeHolidayTagsForToday() {
         "-" +
         String(end.getDate()).padStart(2, "0");
       if (monthDayInHolidayRange(todayMd, startMd, endMd)) {
-        active.add(rule.tag);
+        active.push(rule);
       }
       continue;
     }
     if (monthDayInHolidayRange(todayMd, rule.start, rule.end)) {
-      active.add(rule.tag);
+      active.push(rule);
     }
   }
   return active;
 }
 
-function cardMatchesHolidayTag(card, tagLc) {
-  if (!card || !tagLc) return false;
+function ruleTextMatch(rule, tagHay, titleHay, plotHay) {
+  if (!rule) return false;
+  const needsTag = !!rule.tag;
+  const needsTitle =
+    Array.isArray(rule.titleKeywords) && rule.titleKeywords.length > 0;
+  const needsPlot =
+    Array.isArray(rule.plotKeywords) && rule.plotKeywords.length > 0;
+  if (!needsTag && !needsTitle && !needsPlot) return false;
+  const tagMatch = !needsTag || String(tagHay || "").includes(rule.tag);
+  const titleMatch =
+    !needsTitle ||
+    rule.titleKeywords.some((kw) => String(titleHay || "").includes(kw));
+  const plotMatch =
+    !needsPlot ||
+    rule.plotKeywords.some((kw) => String(plotHay || "").includes(kw));
+  return rule.matchMode === "and"
+    ? tagMatch && titleMatch && plotMatch
+    : tagMatch || titleMatch || plotMatch;
+}
+
+function cardMatchesHolidayRule(card, rule) {
+  if (!card || !rule) return false;
   const genreText = Array.isArray(card.genre)
     ? card.genre.join(" ")
     : String(card.genre || "");
-  const hay = (
+  const tagHay = (
     String(card.title || "") +
     " " +
     String(card.tagLine || "") +
@@ -3748,15 +3806,23 @@ function cardMatchesHolidayTag(card, tagLc) {
   )
     .toLowerCase()
     .trim();
-  return hay.includes(tagLc);
+  const titleHay = (
+    String(card.title || "") + " " + String(card.tagLine || "")
+  )
+    .toLowerCase()
+    .trim();
+  const plotHay = (
+    String(card.summary || "") + " " + String(card.plot || "")
+  )
+    .toLowerCase()
+    .trim();
+  return ruleTextMatch(rule, tagHay, titleHay, plotHay);
 }
 
-function nowShowingRowMatchesHolidayTag(row, tagLc) {
-  if (!row || !tagLc) return false;
-  const hay = (
+function nowShowingRowMatchesHolidayRule(row, rule) {
+  if (!row || !rule) return false;
+  const tagHay = (
     String(row.title || "") +
-    " " +
-    String(row.overview || "") +
     " " +
     String(row.genres || "") +
     " " +
@@ -3766,17 +3832,19 @@ function nowShowingRowMatchesHolidayTag(row, tagLc) {
   )
     .toLowerCase()
     .trim();
-  return hay.includes(tagLc);
+  const titleHay = String(row.title || "").toLowerCase().trim();
+  const plotHay = String(row.overview || "").toLowerCase().trim();
+  return ruleTextMatch(rule, tagHay, titleHay, plotHay);
 }
 
-function boostCardsByHolidayTags(cards, activeTags) {
+function boostCardsByHolidayRules(cards, activeRules) {
   if (!Array.isArray(cards) || !cards.length) return cards;
-  if (!(activeTags instanceof Set) || activeTags.size === 0) return cards;
+  if (!Array.isArray(activeRules) || activeRules.length === 0) return cards;
   const boost = [];
   for (const card of cards) {
     let matches = false;
-    for (const tag of activeTags) {
-      if (cardMatchesHolidayTag(card, tag)) {
+    for (const rule of activeRules) {
+      if (cardMatchesHolidayRule(card, rule)) {
         matches = true;
         break;
       }
@@ -3787,14 +3855,14 @@ function boostCardsByHolidayTags(cards, activeTags) {
   return cards.concat(boost, boost);
 }
 
-function boostNowShowingRowsByHolidayTags(rows, activeTags) {
+function boostNowShowingRowsByHolidayRules(rows, activeRules) {
   if (!Array.isArray(rows) || !rows.length) return rows;
-  if (!(activeTags instanceof Set) || activeTags.size === 0) return rows;
+  if (!Array.isArray(activeRules) || activeRules.length === 0) return rows;
   const boost = [];
   for (const row of rows) {
     let matches = false;
-    for (const tag of activeTags) {
-      if (nowShowingRowMatchesHolidayTag(row, tag)) {
+    for (const rule of activeRules) {
+      if (nowShowingRowMatchesHolidayRule(row, rule)) {
         matches = true;
         break;
       }
@@ -4287,7 +4355,10 @@ app.get(BASEURL + "/now-showing/data", async (req, res) => {
       );
     }
     movies = movies.filter(nowShowingRowHasBannerAndLogo);
-    movies = boostNowShowingRowsByHolidayTags(movies, activeHolidayTagsForToday());
+    movies = boostNowShowingRowsByHolidayRules(
+      movies,
+      activeHolidayRulesForToday()
+    );
     await ensureNowShowingMoviesImageCacheForResponse(movies, BASEURL);
     let curatedWeight = parseInt(loadedSettings.nowShowingCuratedWeight, 10);
     if (isNaN(curatedWeight))
@@ -5438,6 +5509,21 @@ app.post(BASEURL + "/settings/holidays", async (req, res) => {
       : req.body.holidayTag != null
         ? [req.body.holidayTag]
         : [];
+    const titleKeywordsRaw = Array.isArray(req.body.holidayTitleKeywords)
+      ? req.body.holidayTitleKeywords
+      : req.body.holidayTitleKeywords != null
+        ? [req.body.holidayTitleKeywords]
+        : [];
+    const plotKeywordsRaw = Array.isArray(req.body.holidayPlotKeywords)
+      ? req.body.holidayPlotKeywords
+      : req.body.holidayPlotKeywords != null
+        ? [req.body.holidayPlotKeywords]
+        : [];
+    const matchModesRaw = Array.isArray(req.body.holidayMatchMode)
+      ? req.body.holidayMatchMode
+      : req.body.holidayMatchMode != null
+        ? [req.body.holidayMatchMode]
+        : [];
     const modesRaw = Array.isArray(req.body.holidayMode)
       ? req.body.holidayMode
       : req.body.holidayMode != null
@@ -5467,6 +5553,9 @@ app.post(BASEURL + "/settings/holidays", async (req, res) => {
       startsRaw.length,
       endsRaw.length,
       tagsRaw.length,
+      titleKeywordsRaw.length,
+      plotKeywordsRaw.length,
+      matchModesRaw.length,
       modesRaw.length,
       monthsRaw.length,
       weekdaysRaw.length,
@@ -5477,6 +5566,9 @@ app.post(BASEURL + "/settings/holidays", async (req, res) => {
     for (let i = 0; i < maxLen; i++) {
       const mode = normalizeHolidayMode(modesRaw[i]);
       const tag = String(tagsRaw[i] || "").trim();
+      const titleKeywords = normalizeHolidayPlotKeywords(titleKeywordsRaw[i]);
+      const plotKeywords = normalizeHolidayPlotKeywords(plotKeywordsRaw[i]);
+      const matchMode = normalizeHolidayMatchMode(matchModesRaw[i]);
       const start = normalizeHolidayMonthDay(startsRaw[i]);
       const end = normalizeHolidayMonthDay(endsRaw[i]);
       const month = normalizeHolidayInt(monthsRaw[i], 1, 12, 11);
@@ -5486,8 +5578,13 @@ app.post(BASEURL + "/settings/holidays", async (req, res) => {
       const spanDays = normalizeHolidayInt(spansRaw[i], 0, 31, 0);
       if (
         !tag &&
+        titleKeywords.length === 0 &&
+        plotKeywords.length === 0 &&
         !start &&
         !end &&
+        !String(titleKeywordsRaw[i] || "").trim() &&
+        !String(plotKeywordsRaw[i] || "").trim() &&
+        !String(matchModesRaw[i] || "").trim() &&
         !String(modesRaw[i] || "").trim() &&
         !String(monthsRaw[i] || "").trim() &&
         !String(weekdaysRaw[i] || "").trim() &&
@@ -5496,8 +5593,10 @@ app.post(BASEURL + "/settings/holidays", async (req, res) => {
       ) {
         continue;
       }
-      if (!tag) {
-        throw new Error("Each holiday row needs a tag.");
+      if (!tag && titleKeywords.length === 0 && plotKeywords.length === 0) {
+        throw new Error(
+          "Each holiday row needs a tag, title keywords, plot keywords, or a combination."
+        );
       }
       if (mode === "dynamic") {
         out.push({
@@ -5507,6 +5606,9 @@ app.post(BASEURL + "/settings/holidays", async (req, res) => {
           nth,
           spanDays,
           tag: tag.slice(0, 80),
+          titleKeywords: titleKeywords.join(", ").slice(0, 240),
+          plotKeywords: plotKeywords.join(", ").slice(0, 240),
+          matchMode,
         });
         continue;
       }
@@ -5518,6 +5620,9 @@ app.post(BASEURL + "/settings/holidays", async (req, res) => {
         start,
         end,
         tag: tag.slice(0, 80),
+        titleKeywords: titleKeywords.join(", ").slice(0, 240),
+        plotKeywords: plotKeywords.join(", ").slice(0, 240),
+        matchMode,
       });
     }
     holidaysDb.replaceRules(out);
