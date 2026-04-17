@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const util = require('util');
 const fsPromises = fs.promises;
+const { CUSTOM_PICTURES_DIR } = require("../core/appPaths");
 
 /**
  * @desc Used to get a list of custom pictures
@@ -11,11 +12,25 @@ const fsPromises = fs.promises;
 class Pictures {
   constructor() { }
 
+  normalizeThemeFolders(themeValue) {
+    if (Array.isArray(themeValue)) {
+      return themeValue
+        .map((v) => String(v || "").trim())
+        .filter(Boolean);
+    }
+    const raw = String(themeValue == null ? "" : themeValue).trim();
+    if (!raw) return ["default"];
+    return raw
+      .split(",")
+      .map((v) => String(v || "").trim())
+      .filter(Boolean);
+  }
+
   async GetFiles(directoryPath) {
     let pictures = [];
 
     //passsing directoryPath and callback function
-    return await fsPromises.readdir('public/custom/pictures/' + directoryPath).then(
+    return await fsPromises.readdir(path.join(CUSTOM_PICTURES_DIR, directoryPath)).then(
       function (result) {
         // get suitable posters
         let posters = [];
@@ -90,7 +105,16 @@ class Pictures {
  * @desc Custom picture slide array
  */
 async GetPictures(theme, hasThemes, hasArt) {
-  const pics = await this.GetFiles(theme);
+  const folders = this.normalizeThemeFolders(theme);
+  let pics = [];
+  for (const folder of folders) {
+    try {
+      const next = await this.GetFiles(folder);
+      if (Array.isArray(next) && next.length) pics = pics.concat(next);
+    } catch (e) {
+      // ignore bad/missing folders; other selected folders can still load
+    }
+  }
 
   let picCards = [];
   // Example format needed for pictures object

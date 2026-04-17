@@ -35,6 +35,10 @@ class Cache {
    * @param {string} savePath absolute or relative path
    */
   static downloadImageForce(url, savePath, options) {
+    const cleanUrl = String(url || "").trim();
+    if (!cleanUrl || cleanUrl.includes("undefined") || cleanUrl.includes("null")) {
+      return Promise.resolve(false);
+    }
     const headers = options && options.headers;
     return new Promise((resolve, reject) => {
       try {
@@ -43,7 +47,7 @@ class Cache {
         /* ignore */
       }
       const ws = fs.createWriteStream(savePath, { autoClose: true });
-      const req = headers ? request({ url, headers }) : request(url);
+      const req = headers ? request({ url: cleanUrl, headers }) : request(cleanUrl);
       req.on("error", (err) => {
         try {
           ws.destroy();
@@ -91,6 +95,10 @@ class Cache {
    * @returns {Promise<boolean>}
    */
   static download(url, savePath, options) {
+    const cleanUrl = String(url || "").trim();
+    if (!cleanUrl || cleanUrl.includes("undefined") || cleanUrl.includes("null")) {
+      return Promise.resolve(false);
+    }
     if (fs.existsSync(savePath)) {
       return Promise.resolve(true);
     }
@@ -102,7 +110,9 @@ class Cache {
     const headers = options && options.headers;
     return new Promise((resolve) => {
       const ws = fs.createWriteStream(savePath, { autoClose: true });
-      const req = headers ? request({ url, headers }) : request(url);
+      const req = headers
+        ? request({ url: cleanUrl, headers })
+        : request(cleanUrl);
       req.on("error", (err) => {
         try {
           ws.destroy();

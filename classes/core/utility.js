@@ -131,38 +131,39 @@ class utility {
     if (options && options.includeAll === true) {
       return Array.isArray(mediaCards) ? mediaCards.slice() : [];
     }
-    let onDemandCards = [];
-    let libTooSmall = false;
-    if(recentlyAdded > 0) {
+    if (recentlyAdded > 0) {
       return mediaCards;
     }
-    else{
-      for await (let i of Array(numberOnDemand).keys()) {
-        let odc;
-        odc = await this.random_item(mediaCards);
-        let tryCount = 0;
-        // try at least five times to get unique random titles. If not, then ommit
-        while(onDemandCards.includes(odc) && tryCount < 5){
-          //console.log('Dupe found:' + odc.title);
-          tryCount++;
-          odc = await this.random_item(mediaCards);
-        }
-        // finally, if card still a duplicate, then ommit from display
-        if(!onDemandCards.includes(odc)){
-          onDemandCards.push(odc);
-        }
-        else{
-          libTooSmall = true;
-        }
-      }
-      // display a warning if 'number to display' was too large for library size.
-      if(libTooSmall && mediaCards.length !== 0){
-        let d = new Date();
-        console.log(d.toLocaleString() + " ✘✘ WARNING ✘✘ On-demand library too small to get consistent unique titles. Requested titles reduced. (Reduce the 'number to display')");
-      }
-      return onDemandCards;
+    const pool = Array.isArray(mediaCards) ? mediaCards.slice() : [];
+    if (pool.length === 0) {
+      return [];
     }
-  
+    const requested = Math.max(0, Math.floor(Number(numberOnDemand)));
+    const want = Math.min(requested, pool.length);
+    if (want === 0) {
+      return [];
+    }
+    // Fisher–Yates shuffle, then take first `want` — always unique (reference equality per slot).
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const t = pool[i];
+      pool[i] = pool[j];
+      pool[j] = t;
+    }
+    if (requested > pool.length && pool.length > 0) {
+      const d = new Date();
+      console.log(
+        d.toLocaleString() +
+          " *On-demand — requested " +
+          requested +
+          " unique title(s) but only " +
+          pool.length +
+          " match the current library/filters; showing " +
+          pool.length +
+          ". (Lower “number to display” or widen libraries/filters.)"
+      );
+    }
+    return pool.slice(0, want);
     }
 }
 

@@ -3,15 +3,19 @@ const path = require("path");
 const Cache = require("./cache");
 const MediaCard = require("../cards/MediaCard");
 const CardType = require("../cards/CardType");
-const { CACHE_ROOT, LEGACY_SAVED_ROOT } = require("./appPaths");
+const { CACHE_ROOT, CONFIG_ROOT, LEGACY_SAVED_ROOT } = require("./appPaths");
 
-/** SQLite poster metadata (replaces legacy JSON). */
-const SQLITE_DB = path.join(CACHE_ROOT, "posterr-poster-metadata.db");
+/** SQLite poster metadata (moved from config/cache to config root). */
+const SQLITE_DB = path.join(CONFIG_ROOT, "posterr-poster-metadata.db");
+/** Previous path under config/cache; auto-migrated to config root. */
+const LEGACY_CACHE_SQLITE = path.join(CACHE_ROOT, "posterr-poster-metadata.db");
 /** Legacy JSON under former saved/; migrated once into SQLite then renamed. */
 const LEGACY_JSON = path.join(LEGACY_SAVED_ROOT, "posterr-poster-metadata.json");
 /** Legacy SQLite under former saved/; migrated into config/cache on first start. */
 const LEGACY_SQLITE = path.join(LEGACY_SAVED_ROOT, "posterr-poster-metadata.db");
 const IMAGECACHE = path.join(CACHE_ROOT, "imagecache");
+/** Pre–config/cache layout; still checked so poster DB rows match files users never moved. */
+const LEGACY_IMAGECACHE = path.join(LEGACY_SAVED_ROOT, "imagecache");
 const MP3CACHE = path.join(CACHE_ROOT, "mp3cache");
 /** Upper bound on poster metadata rows (full-library sync can exceed the old 2500 cap). */
 const MAX_ENTRIES = 100000;
@@ -21,10 +25,30 @@ const DEFAULT_FALLBACK_COUNT = 24;
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS poster_entries (
   cache_file TEXT PRIMARY KEY NOT NULL,
+  logo_cache_file TEXT NOT NULL DEFAULT '',
+  art_cache_file TEXT NOT NULL DEFAULT '',
+  banner_cache_file TEXT NOT NULL DEFAULT '',
+  portrait_actor_cache_file TEXT NOT NULL DEFAULT '',
+  portrait_actress_cache_file TEXT NOT NULL DEFAULT '',
+  portrait_director_cache_file TEXT NOT NULL DEFAULT '',
+  portrait_author_cache_file TEXT NOT NULL DEFAULT '',
+  portrait_artist_cache_file TEXT NOT NULL DEFAULT '',
   title TEXT NOT NULL DEFAULT '',
   tag_line TEXT NOT NULL DEFAULT '',
   year TEXT NOT NULL DEFAULT '',
   media_type TEXT NOT NULL DEFAULT 'movie',
+  tags_text TEXT NOT NULL DEFAULT '',
+  genres TEXT NOT NULL DEFAULT '',
+  top_cast TEXT NOT NULL DEFAULT '',
+  actor_1 TEXT NOT NULL DEFAULT '',
+  actor_2 TEXT NOT NULL DEFAULT '',
+  studio TEXT NOT NULL DEFAULT '',
+  runtime_mins INTEGER NOT NULL DEFAULT 0,
+  rating TEXT NOT NULL DEFAULT '',
+  content_rating TEXT NOT NULL DEFAULT '',
+  plot TEXT NOT NULL DEFAULT '',
+  rating_score TEXT NOT NULL DEFAULT '',
+  rating_content TEXT NOT NULL DEFAULT '',
   summary TEXT NOT NULL DEFAULT '',
   server_kind TEXT NOT NULL DEFAULT 'plex',
   poster_ar TEXT NOT NULL DEFAULT '',
@@ -42,6 +66,28 @@ CREATE INDEX IF NOT EXISTS idx_poster_server_dbid ON poster_entries(server_kind,
 
 /** @type {any} */
 let _sqlDb = null;
+const EXTRA_SCHEMA_COLUMNS = [
+  { name: "logo_cache_file", def: "TEXT NOT NULL DEFAULT ''" },
+  { name: "art_cache_file", def: "TEXT NOT NULL DEFAULT ''" },
+  { name: "banner_cache_file", def: "TEXT NOT NULL DEFAULT ''" },
+  { name: "portrait_actor_cache_file", def: "TEXT NOT NULL DEFAULT ''" },
+  { name: "portrait_actress_cache_file", def: "TEXT NOT NULL DEFAULT ''" },
+  { name: "portrait_director_cache_file", def: "TEXT NOT NULL DEFAULT ''" },
+  { name: "portrait_author_cache_file", def: "TEXT NOT NULL DEFAULT ''" },
+  { name: "portrait_artist_cache_file", def: "TEXT NOT NULL DEFAULT ''" },
+  { name: "genres", def: "TEXT NOT NULL DEFAULT ''" },
+  { name: "tags_text", def: "TEXT NOT NULL DEFAULT ''" },
+  { name: "top_cast", def: "TEXT NOT NULL DEFAULT ''" },
+  { name: "actor_1", def: "TEXT NOT NULL DEFAULT ''" },
+  { name: "actor_2", def: "TEXT NOT NULL DEFAULT ''" },
+  { name: "studio", def: "TEXT NOT NULL DEFAULT ''" },
+  { name: "runtime_mins", def: "INTEGER NOT NULL DEFAULT 0" },
+  { name: "rating", def: "TEXT NOT NULL DEFAULT ''" },
+  { name: "content_rating", def: "TEXT NOT NULL DEFAULT ''" },
+  { name: "plot", def: "TEXT NOT NULL DEFAULT ''" },
+  { name: "rating_score", def: "TEXT NOT NULL DEFAULT ''" },
+  { name: "rating_content", def: "TEXT NOT NULL DEFAULT ''" },
+];
 
 function assertDb() {
   if (!_sqlDb) {
@@ -53,9 +99,28 @@ function assertDb() {
 
 function persistDb() {
   assertDb();
-  fs.mkdirSync(CACHE_ROOT, { recursive: true });
+  fs.mkdirSync(path.dirname(SQLITE_DB), { recursive: true });
   const data = _sqlDb.export();
   fs.writeFileSync(SQLITE_DB, Buffer.from(data));
+}
+
+function ensurePosterEntriesExtraColumns() {
+  assertDb();
+  const existing = new Set();
+  let changed = false;
+  const s = _sqlDb.prepare("PRAGMA table_info(poster_entries)");
+  while (s.step()) {
+    const row = s.getAsObject();
+    existing.add(String(row.name || "").toLowerCase());
+  }
+  s.free();
+  for (const c of EXTRA_SCHEMA_COLUMNS) {
+    if (!existing.has(c.name.toLowerCase())) {
+      _sqlDb.run(`ALTER TABLE poster_entries ADD COLUMN ${c.name} ${c.def}`);
+      changed = true;
+    }
+  }
+  return changed;
 }
 
 /**
@@ -75,8 +140,12 @@ async function initPosterMetadataDb() {
 
   const hadNewSqlite = fs.existsSync(SQLITE_DB);
   let loadedFromLegacySqlite = false;
+  let loadedFromLegacyCacheSqlite = false;
   if (hadNewSqlite) {
     _sqlDb = new SQL.Database(fs.readFileSync(SQLITE_DB));
+  } else if (fs.existsSync(LEGACY_CACHE_SQLITE)) {
+    _sqlDb = new SQL.Database(fs.readFileSync(LEGACY_CACHE_SQLITE));
+    loadedFromLegacyCacheSqlite = true;
   } else if (fs.existsSync(LEGACY_SQLITE)) {
     _sqlDb = new SQL.Database(fs.readFileSync(LEGACY_SQLITE));
     loadedFromLegacySqlite = true;
@@ -84,6 +153,7 @@ async function initPosterMetadataDb() {
     _sqlDb = new SQL.Database();
   }
   _sqlDb.exec(SCHEMA_SQL);
+  const addedSchemaColumns = ensurePosterEntriesExtraColumns();
 
   let migratedJson = false;
   const cntAfterOpen = countRows();
@@ -116,7 +186,27 @@ async function initPosterMetadataDb() {
     }
   }
 
-  if (loadedFromLegacySqlite) {
+  if (loadedFromLegacyCacheSqlite) {
+    persistDb();
+    try {
+      const lbak = LEGACY_CACHE_SQLITE + ".migrated.bak";
+      if (fs.existsSync(lbak)) fs.unlinkSync(lbak);
+      fs.renameSync(LEGACY_CACHE_SQLITE, lbak);
+      console.log(
+        new Date().toLocaleString() +
+          " Poster metadata: migrated SQLite DB from config/cache → " +
+          SQLITE_DB +
+          "; backup at " +
+          lbak
+      );
+    } catch (e) {
+      console.log(
+        new Date().toLocaleString() +
+          " Poster metadata: could not rename legacy config/cache DB — " +
+          (e && e.message ? e.message : e)
+      );
+    }
+  } else if (loadedFromLegacySqlite) {
     persistDb();
     try {
       const lbak = LEGACY_SQLITE + ".migrated.bak";
@@ -138,6 +228,13 @@ async function initPosterMetadataDb() {
     }
   } else if (!hadNewSqlite && !migratedJson) {
     persistDb();
+  } else if (addedSchemaColumns) {
+    // Existing DB upgraded with new columns; persist ALTER TABLE changes immediately.
+    persistDb();
+    console.log(
+      new Date().toLocaleString() +
+        " Poster metadata: schema upgraded with additional metadata/cache columns"
+    );
   }
 
   logLegacySavedImageHint();
@@ -169,19 +266,42 @@ function migrateLegacyJson() {
   const entries = parsed && Array.isArray(parsed.entries) ? parsed.entries : [];
   const ins = _sqlDb.prepare(`
     INSERT OR REPLACE INTO poster_entries (
-      cache_file, title, tag_line, year, media_type, summary, server_kind, poster_ar,
+      cache_file, logo_cache_file, art_cache_file, banner_cache_file,
+      portrait_actor_cache_file, portrait_actress_cache_file,
+      portrait_director_cache_file, portrait_author_cache_file, portrait_artist_cache_file,
+      title, tag_line, year, media_type, tags_text, genres, top_cast, actor_1, actor_2, studio, runtime_mins, rating, content_rating, plot, rating_score, rating_content, summary, server_kind, poster_ar,
       dbid, api_item_id, library_kind, library_name, source_url, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   try {
     _sqlDb.run("BEGIN");
     for (const e of entries) {
       const row = entryToParams({
         cacheFile: e.cacheFile,
+        logoCacheFile: e.logoCacheFile,
+        artCacheFile: e.artCacheFile,
+        bannerCacheFile: e.bannerCacheFile,
+        portraitActorCacheFile: e.portraitActorCacheFile,
+        portraitActressCacheFile: e.portraitActressCacheFile,
+        portraitDirectorCacheFile: e.portraitDirectorCacheFile,
+        portraitAuthorCacheFile: e.portraitAuthorCacheFile,
+        portraitArtistCacheFile: e.portraitArtistCacheFile,
         title: e.title,
         tagLine: e.tagLine,
         year: e.year,
         mediaType: e.mediaType,
+        tagsText: e.tagsText,
+        genres: e.genres,
+        topCast: e.topCast,
+        actor1: e.actor1,
+        actor2: e.actor2,
+        studio: e.studio,
+        runtimeMins: e.runtimeMins,
+        rating: e.rating,
+        contentRating: e.contentRating,
+        plot: e.plot,
+        ratingScore: e.ratingScore,
+        ratingContent: e.ratingContent,
         summary: e.summary,
         serverKind: e.serverKind,
         posterAR: e.posterAR,
@@ -223,10 +343,30 @@ function rowFromDb(r) {
   if (!r) return null;
   return {
     cacheFile: r.cache_file,
+    logoCacheFile: r.logo_cache_file || "",
+    artCacheFile: r.art_cache_file || "",
+    bannerCacheFile: r.banner_cache_file || "",
+    portraitActorCacheFile: r.portrait_actor_cache_file || "",
+    portraitActressCacheFile: r.portrait_actress_cache_file || "",
+    portraitDirectorCacheFile: r.portrait_director_cache_file || "",
+    portraitAuthorCacheFile: r.portrait_author_cache_file || "",
+    portraitArtistCacheFile: r.portrait_artist_cache_file || "",
     title: r.title || "",
     tagLine: r.tag_line || "",
     year: r.year || "",
     mediaType: r.media_type || "",
+    tagsText: r.tags_text || "",
+    genres: r.genres || "",
+    topCast: r.top_cast || "",
+    actor1: r.actor_1 || "",
+    actor2: r.actor_2 || "",
+    studio: r.studio || "",
+    runtimeMins: Number(r.runtime_mins) || 0,
+    rating: r.rating || "",
+    contentRating: r.content_rating || "",
+    plot: r.plot || r.summary || "",
+    ratingScore: r.rating_score || r.rating || "",
+    ratingContent: r.rating_content || r.content_rating || "",
     summary: r.summary || "",
     serverKind: r.server_kind || "",
     posterAR: r.poster_ar || "",
@@ -243,10 +383,30 @@ function rowFromDb(r) {
 function entryToParams(e) {
   return [
     e.cacheFile,
+    e.logoCacheFile || "",
+    e.artCacheFile || "",
+    e.bannerCacheFile || "",
+    e.portraitActorCacheFile || "",
+    e.portraitActressCacheFile || "",
+    e.portraitDirectorCacheFile || "",
+    e.portraitAuthorCacheFile || "",
+    e.portraitArtistCacheFile || "",
     e.title || "",
     e.tagLine || "",
     e.year || "",
     e.mediaType || "movie",
+    e.tagsText || "",
+    e.genres || "",
+    e.topCast || "",
+    e.actor1 || "",
+    e.actor2 || "",
+    e.studio || "",
+    Number.isFinite(Number(e.runtimeMins)) ? Math.max(0, Math.round(Number(e.runtimeMins))) : 0,
+    e.rating || "",
+    e.contentRating || "",
+    e.plot || "",
+    e.ratingScore || "",
+    e.ratingContent || "",
     e.summary || "",
     e.serverKind || "plex",
     e.posterAR || "",
@@ -257,6 +417,38 @@ function entryToParams(e) {
     e.sourceUrl || "",
     e.updatedAt || "",
   ];
+}
+
+function normalizeMetadataTags(card) {
+  if (!card || typeof card !== "object") return "";
+  const out = [];
+  const add = (v) => {
+    if (v == null) return;
+    if (Array.isArray(v)) {
+      for (const x of v) add(x);
+      return;
+    }
+    const s = String(v).trim();
+    if (!s) return;
+    out.push(s);
+  };
+  add(card.tags);
+  add(card.keywords);
+  add(card.labels);
+  add(card.genre);
+  add(card.contentRating);
+  add(card.studio);
+  add(card.network);
+  add(card.cast);
+  const uniq = [];
+  const seen = new Set();
+  for (const s of out) {
+    const lc = s.toLowerCase();
+    if (seen.has(lc)) continue;
+    seen.add(lc);
+    uniq.push(s);
+  }
+  return uniq.join(", ").slice(0, 400);
 }
 
 function selectAllEntries() {
@@ -292,6 +484,40 @@ function getEntryByCacheFile(cacheFile) {
   return row;
 }
 
+function getEntryByServerAndApiItemId(serverKind, apiItemId) {
+  assertDb();
+  const sk = String(serverKind || "").toLowerCase().trim();
+  const aid = String(apiItemId || "").trim();
+  if (!sk || !aid) return null;
+  const s = _sqlDb.prepare(
+    "SELECT * FROM poster_entries WHERE server_kind = ? AND api_item_id = ? LIMIT 1"
+  );
+  s.bind([sk, aid]);
+  let row = null;
+  if (s.step()) row = rowFromDb(s.getAsObject());
+  s.free();
+  return row;
+}
+
+/**
+ * Full sync optimization: skip expensive metadata/image pull when a valid cached
+ * poster row already exists and source item was not updated.
+ * @param {string} serverKind
+ * @param {string} apiItemId
+ * @param {string|number|Date} sourceUpdatedAt
+ */
+function shouldSkipSyncItem(serverKind, apiItemId, sourceUpdatedAt) {
+  const row = getEntryByServerAndApiItemId(serverKind, apiItemId);
+  if (!row || !row.cacheFile || !fileOk(row.cacheFile)) return false;
+  if (sourceUpdatedAt === undefined || sourceUpdatedAt === null || sourceUpdatedAt === "")
+    return true;
+  const srcTs = new Date(sourceUpdatedAt).getTime();
+  const rowTs = new Date(row.updatedAt || 0).getTime();
+  if (!Number.isFinite(srcTs) || srcTs <= 0) return true;
+  if (!Number.isFinite(rowTs) || rowTs <= 0) return false;
+  return srcTs <= rowTs;
+}
+
 function deleteByCacheFiles(files) {
   if (!files.length) return;
   assertDb();
@@ -316,9 +542,12 @@ function replaceAllEntries(entries) {
   assertDb();
   const ins = _sqlDb.prepare(`
     INSERT INTO poster_entries (
-      cache_file, title, tag_line, year, media_type, summary, server_kind, poster_ar,
+      cache_file, logo_cache_file, art_cache_file, banner_cache_file,
+      portrait_actor_cache_file, portrait_actress_cache_file,
+      portrait_director_cache_file, portrait_author_cache_file, portrait_artist_cache_file,
+      title, tag_line, year, media_type, tags_text, genres, top_cast, actor_1, actor_2, studio, runtime_mins, rating, content_rating, plot, rating_score, rating_content, summary, server_kind, poster_ar,
       dbid, api_item_id, library_kind, library_name, source_url, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   try {
     _sqlDb.run("BEGIN");
@@ -358,39 +587,107 @@ function enforceMaxEntries() {
  */
 function normalizeCacheFile(posterURL) {
   if (!posterURL || typeof posterURL !== "string") return null;
-  const idx = posterURL.indexOf("/imagecache/");
+  const idx = posterURL.toLowerCase().indexOf("/imagecache/");
   if (idx === -1) return null;
   let rest = posterURL.slice(idx + "/imagecache/".length);
   if (rest.includes("?")) rest = rest.split("?")[0];
-  const base = path.basename(rest);
+  const base = path.basename(rest.replace(/\\/g, "/"));
   if (!base || /[\\/]/.test(base) || base.includes("..")) return null;
   return base;
 }
 
-function fileOk(cacheFile) {
-  const fp = path.join(IMAGECACHE, cacheFile);
-  try {
-    const st = fs.statSync(fp);
-    return st.isFile() && st.size >= MIN_FILE_BYTES;
-  } catch (e) {
-    return false;
-  }
+/**
+ * Normalize a poster_entries.cache_file value to a single safe basename (flat imagecache layout).
+ * Handles full URLs, Windows paths, and plain basenames.
+ * @param {string} cacheFile
+ * @returns {string|null}
+ */
+function cacheBasenameFromStoredValue(cacheFile) {
+  if (!cacheFile || typeof cacheFile !== "string") return null;
+  const s = cacheFile.trim().replace(/\\/g, "/");
+  if (!s) return null;
+  const idx = s.toLowerCase().indexOf("/imagecache/");
+  let rest = idx === -1 ? s : s.slice(idx + "/imagecache/".length);
+  if (rest.includes("?")) rest = rest.split("?")[0];
+  const base = path.basename(rest);
+  if (!base || base === "." || base === ".." || base.includes("..")) return null;
+  return base;
 }
 
-function unlinkCacheAndArt(cacheFile) {
-  const fp = path.join(IMAGECACHE, cacheFile);
+function fileOk(cacheFile) {
+  const base = cacheBasenameFromStoredValue(cacheFile);
+  if (!base) return false;
+  const dirs = [IMAGECACHE];
   try {
-    if (fs.existsSync(fp)) fs.unlinkSync(fp);
+    if (path.resolve(LEGACY_IMAGECACHE) !== path.resolve(IMAGECACHE)) {
+      dirs.push(LEGACY_IMAGECACHE);
+    }
   } catch (e) {
     /* ignore */
   }
-  const m = String(cacheFile).match(/^(.+)\.jpg$/i);
-  if (m) {
+  for (const dir of dirs) {
+    const fp = path.join(dir, base);
     try {
-      const art = path.join(IMAGECACHE, m[1] + "-art.jpg");
-      if (fs.existsSync(art)) fs.unlinkSync(art);
+      const st = fs.statSync(fp);
+      if (st.isFile() && st.size >= MIN_FILE_BYTES) return true;
+    } catch (e) {
+      /* try next dir */
+    }
+  }
+  return false;
+}
+
+/** Cached wide background: fanart (`-art.jpg`) first, else Plex/JF banner (`-banner.jpg`). */
+function resolveBackdropCacheFile(posterCacheFile) {
+  const m = String(posterCacheFile || "").match(/^(.+)\.(jpe?g)$/i);
+  if (!m) return "";
+  const base = m[1];
+  const artFn = `${base}-art.jpg`;
+  if (fileOk(artFn)) return artFn;
+  const bnFn = `${base}-banner.jpg`;
+  if (fileOk(bnFn)) return bnFn;
+  return "";
+}
+
+/** Cached banner only (`-banner.jpg`). */
+function resolveBannerCacheFile(posterCacheFile) {
+  const m = String(posterCacheFile || "").match(/^(.+)\.(jpe?g)$/i);
+  if (!m) return "";
+  const bnFn = `${m[1]}-banner.jpg`;
+  if (fileOk(bnFn)) return bnFn;
+  return "";
+}
+
+function unlinkCacheAndArt(cacheFile) {
+  const base = cacheBasenameFromStoredValue(cacheFile) || String(cacheFile || "").trim();
+  if (!base) return;
+  const dirs = [IMAGECACHE];
+  try {
+    if (path.resolve(LEGACY_IMAGECACHE) !== path.resolve(IMAGECACHE)) {
+      dirs.push(LEGACY_IMAGECACHE);
+    }
+  } catch (e) {
+    /* ignore */
+  }
+  for (const dir of dirs) {
+    const fp = path.join(dir, base);
+    try {
+      if (fs.existsSync(fp)) fs.unlinkSync(fp);
     } catch (e) {
       /* ignore */
+    }
+  }
+  const m = String(base).match(/^(.+)\.jpg$/i);
+  if (m) {
+    for (const suf of ["-art", "-banner"]) {
+      for (const dir of dirs) {
+        try {
+          const side = path.join(dir, m[1] + suf + ".jpg");
+          if (fs.existsSync(side)) fs.unlinkSync(side);
+        } catch (e) {
+          /* ignore */
+        }
+      }
     }
   }
 }
@@ -473,33 +770,57 @@ function registerFromMediaServerCards(nsCards, odCards, serverKind) {
   const cards = []
     .concat(Array.isArray(nsCards) ? nsCards : [])
     .concat(Array.isArray(odCards) ? odCards : []);
-  if (cards.length === 0) return;
+  if (cards.length === 0) {
+    return {
+      totalCards: 0,
+      posterUrlPresent: 0,
+      normalizedCacheFile: 0,
+      fileOk: 0,
+      titlePresent: 0,
+      written: 0,
+      rowCountBefore: countRows(),
+      rowCountAfter: countRows(),
+    };
+  }
 
   assertDb();
   let changed = false;
+  let written = 0;
+  let posterUrlPresent = 0;
+  let normalizedCacheFile = 0;
+  let fileOkCount = 0;
+  let titlePresent = 0;
+  const rowCountBefore = countRows();
   const now = new Date().toISOString();
   const kind = String(serverKind || "plex").toLowerCase();
 
   const ins = _sqlDb.prepare(`
     INSERT OR REPLACE INTO poster_entries (
-      cache_file, title, tag_line, year, media_type, summary, server_kind, poster_ar,
+      cache_file, logo_cache_file, art_cache_file, banner_cache_file,
+      portrait_actor_cache_file, portrait_actress_cache_file,
+      portrait_director_cache_file, portrait_author_cache_file, portrait_artist_cache_file,
+      title, tag_line, year, media_type, tags_text, genres, top_cast, actor_1, actor_2, studio, runtime_mins, rating, content_rating, plot, rating_score, rating_content, summary, server_kind, poster_ar,
       dbid, api_item_id, library_kind, library_name, source_url, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   try {
     _sqlDb.run("BEGIN");
     for (const card of cards) {
+      if (card && String(card.posterURL || "").trim()) posterUrlPresent += 1;
       const cacheFile = normalizeCacheFile(card.posterURL);
-      if (!cacheFile || !fileOk(cacheFile)) continue;
+      if (!cacheFile) continue;
+      normalizedCacheFile += 1;
+      if (fileOk(cacheFile)) fileOkCount += 1;
 
       const title = String(card.title || "").trim();
       if (!title) continue;
+      titlePresent += 1;
 
       let sourceUrl = String(card.posterDownloadURL || "").trim();
       let apiItemId = String(card.posterApiItemId || "").trim();
       let libraryKind = String(card.posterLibraryKind || "").trim();
-      const libraryName = String(card.posterLibraryLabel || "").trim();
+      let libraryName = String(card.posterLibraryLabel || "").trim();
 
       const old = getEntryByCacheFile(cacheFile);
       if (!sourceUrl && old && old.sourceUrl) sourceUrl = old.sourceUrl;
@@ -509,10 +830,48 @@ function registerFromMediaServerCards(nsCards, odCards, serverKind) {
 
       const row = {
         cacheFile,
+        logoCacheFile: normalizeCacheFile(card.posterLogoURL) || "",
+        artCacheFile: normalizeCacheFile(card.posterArtURL) || "",
+        bannerCacheFile:
+          normalizeCacheFile(card.posterBannerURL) || resolveBannerCacheFile(cacheFile),
+        portraitActorCacheFile: normalizeCacheFile(card.portraitActorURL) || "",
+        portraitActressCacheFile:
+          normalizeCacheFile(card.portraitActressURL) || "",
+        portraitDirectorCacheFile:
+          normalizeCacheFile(card.portraitDirectorURL) || "",
+        portraitAuthorCacheFile:
+          normalizeCacheFile(card.portraitAuthorURL) || "",
+        portraitArtistCacheFile:
+          normalizeCacheFile(card.portraitArtistURL) || "",
         title,
         tagLine: String(card.tagLine || "").trim(),
         year: String(card.year || "").trim(),
         mediaType: String(card.mediaType || "movie").trim() || "movie",
+        tagsText: normalizeMetadataTags(card),
+        genres: Array.isArray(card.genre)
+          ? card.genre.join(", ")
+          : String(card.genre || "").trim(),
+        topCast: String(card.cast || "")
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean)
+          .slice(0, 2)
+          .join(", "),
+        actor1: String(card.cast || "")
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean)[0] || "",
+        actor2: String(card.cast || "")
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean)[1] || "",
+        studio: String(card.studio || card.network || "").trim(),
+        runtimeMins: Math.max(0, parseInt(card.runTime, 10) || 0),
+        rating: String(card.rating || "").trim(),
+        contentRating: String(card.contentRating || "").trim(),
+        plot: String(card.summary || "").slice(0, 2000),
+        ratingScore: String(card.rating || "").trim(),
+        ratingContent: String(card.contentRating || "").trim(),
         summary: String(card.summary || "").slice(0, 2000),
         serverKind: kind,
         posterAR: String(card.posterAR || "").trim(),
@@ -523,13 +882,49 @@ function registerFromMediaServerCards(nsCards, odCards, serverKind) {
         sourceUrl,
         updatedAt: now,
       };
+      const incomingTagLine = String(card.tagLine || "").trim();
+      const oldTagLine = old ? String(old.tagLine || "").trim() : "";
+      const oldTitle = old ? String(old.title || "").trim() : "";
+      const looksLikeFallbackTitle =
+        incomingTagLine &&
+        row.title &&
+        incomingTagLine.toLowerCase() === row.title.toLowerCase();
+      const oldLooksRealTagline =
+        oldTagLine &&
+        (!oldTitle || oldTagLine.toLowerCase() !== oldTitle.toLowerCase());
+      if (!incomingTagLine && oldTagLine) {
+        row.tagLine = oldTagLine;
+      } else if (looksLikeFallbackTitle && oldLooksRealTagline) {
+        // Keep a previously synced real tagline when current sync only has title fallback.
+        row.tagLine = oldTagLine;
+      }
 
       const needsWrite =
         !old ||
         old.title !== row.title ||
+        old.logoCacheFile !== row.logoCacheFile ||
+        old.artCacheFile !== row.artCacheFile ||
+        old.bannerCacheFile !== row.bannerCacheFile ||
+        old.portraitActorCacheFile !== row.portraitActorCacheFile ||
+        old.portraitActressCacheFile !== row.portraitActressCacheFile ||
+        old.portraitDirectorCacheFile !== row.portraitDirectorCacheFile ||
+        old.portraitAuthorCacheFile !== row.portraitAuthorCacheFile ||
+        old.portraitArtistCacheFile !== row.portraitArtistCacheFile ||
         old.tagLine !== row.tagLine ||
         old.year !== row.year ||
         old.mediaType !== row.mediaType ||
+        old.tagsText !== row.tagsText ||
+        old.genres !== row.genres ||
+        old.topCast !== row.topCast ||
+        old.actor1 !== row.actor1 ||
+        old.actor2 !== row.actor2 ||
+        old.studio !== row.studio ||
+        Number(old.runtimeMins || 0) !== Number(row.runtimeMins || 0) ||
+        old.rating !== row.rating ||
+        old.contentRating !== row.contentRating ||
+        old.plot !== row.plot ||
+        old.ratingScore !== row.ratingScore ||
+        old.ratingContent !== row.ratingContent ||
         old.serverKind !== row.serverKind ||
         old.summary !== row.summary ||
         old.posterAR !== row.posterAR ||
@@ -542,6 +937,7 @@ function registerFromMediaServerCards(nsCards, odCards, serverKind) {
       if (needsWrite) {
         ins.run(entryToParams(row));
         changed = true;
+        written += 1;
       }
     }
     _sqlDb.run("COMMIT");
@@ -560,6 +956,17 @@ function registerFromMediaServerCards(nsCards, odCards, serverKind) {
     enforceMaxEntries();
     persistDb();
   }
+  const rowCountAfter = countRows();
+  return {
+    totalCards: cards.length,
+    posterUrlPresent,
+    normalizedCacheFile,
+    fileOk: fileOkCount,
+    titlePresent,
+    written,
+    rowCountBefore,
+    rowCountAfter,
+  };
 }
 
 function pickRandomEntries(count, serverKindOpt) {
@@ -581,6 +988,40 @@ function pickRandomEntries(count, serverKindOpt) {
     [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
   }
   return shuffled.slice(0, Math.min(count, shuffled.length));
+}
+
+/** Match EmbyJellyfinBase.ratingColour / MediaCard content-rating pills for DB-built OD cards. */
+function ratingColourForContentRating(contentRating) {
+  const cr = (contentRating || "NR").toLowerCase();
+  let ratingColour = "badge-dark";
+  switch (cr) {
+    case "nr":
+    case "unrated":
+      ratingColour = "badge-dark";
+      break;
+    case "g":
+    case "tv-g":
+    case "tv-y":
+      ratingColour = "badge-success";
+      break;
+    case "pg":
+    case "tv-pg":
+    case "tv-y7":
+      ratingColour = "badge-info";
+      break;
+    case "pg-13":
+    case "tv-14":
+      ratingColour = "badge-warning";
+      break;
+    case "tv-ma":
+    case "r":
+    case "nc-17":
+      ratingColour = "badge-danger";
+      break;
+    default:
+      ratingColour = "badge-dark";
+  }
+  return ratingColour;
 }
 
 /**
@@ -619,10 +1060,39 @@ function applyCachedPostersToMediaCards(cards, serverKind) {
     }
     if (!row) continue;
     card.posterURL = "/imagecache/" + row.cacheFile;
-    const m = String(row.cacheFile).match(/^(.+)\.(jpe?g)$/i);
-    if (m) {
-      const artFn = `${m[1]}-art.jpg`;
-      if (fileOk(artFn)) card.posterArtURL = "/imagecache/" + artFn;
+    const artFn = resolveBackdropCacheFile(row.cacheFile);
+    if (artFn) card.posterArtURL = "/imagecache/" + artFn;
+    if (!card.genre || (Array.isArray(card.genre) && card.genre.length === 0)) {
+      const g = row.genres != null ? String(row.genres).trim() : "";
+      if (g) card.genre = g;
+    }
+    if (!card.tags && row.tagsText) card.tags = row.tagsText;
+    if (!card.studio && row.studio) card.studio = row.studio;
+    if (
+      (!card.runTime || card.runTime === "" || card.runTime === 0) &&
+      row.runtimeMins > 0
+    ) {
+      card.runTime = String(row.runtimeMins);
+    }
+    if (!card.rating && row.rating) card.rating = row.rating;
+    if (!card.contentRating && row.contentRating) {
+      card.contentRating = row.contentRating;
+      card.ratingColour = ratingColourForContentRating(row.contentRating);
+    }
+    if (!card.cast && row.topCast) card.cast = String(row.topCast).trim();
+    if (!card.cast) {
+      const a = [row.actor1, row.actor2].filter((x) => x && String(x).trim());
+      if (a.length) card.cast = a.join(", ");
+    }
+    if (!card.actor1 && row.actor1) card.actor1 = row.actor1;
+    if (!card.actor2 && row.actor2) card.actor2 = row.actor2;
+    if (!String(card.actor1 || "").trim() || !String(card.actor2 || "").trim()) {
+      const cp = String(card.cast || "")
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean);
+      if (!String(card.actor1 || "").trim()) card.actor1 = cp[0] || "";
+      if (!String(card.actor2 || "").trim()) card.actor2 = cp[1] || "";
     }
   }
   return cards;
@@ -652,9 +1122,54 @@ function buildFallbackMediaCards(count, serverKind) {
     c.year = row.year || "";
     c.summary = row.summary || "";
     c.posterURL = "/imagecache/" + row.cacheFile;
-    c.posterArtURL = "";
+    const artFn = resolveBackdropCacheFile(row.cacheFile);
+    c.posterArtURL = artFn ? "/imagecache/" + artFn : "";
     if (row.posterAR) c.posterAR = row.posterAR;
     c.DBID = row.dbid || "";
+    c.posterApiItemId = String(row.apiItemId || "").trim();
+    c.posterLibraryLabel = row.libraryName || "";
+    if (row.logoCacheFile) {
+      c.posterLogoURL = "/imagecache/" + row.logoCacheFile;
+    }
+    c.genre = row.genres != null ? String(row.genres).trim() : "";
+    c.tags = row.tagsText || "";
+    c.studio = row.studio || "";
+    if (row.runtimeMins > 0) c.runTime = String(row.runtimeMins);
+    c.rating = row.rating || "";
+    c.contentRating = row.contentRating || "";
+    c.ratingColour = ratingColourForContentRating(c.contentRating || "NR");
+    const castBits = [row.actor1, row.actor2].filter(
+      (x) => x && String(x).trim()
+    );
+    c.cast =
+      row.topCast && String(row.topCast).trim()
+        ? String(row.topCast).trim()
+        : castBits.join(", ");
+    c.actor1 = String(row.actor1 || "").trim();
+    c.actor2 = String(row.actor2 || "").trim();
+    if (!c.actor1 || !c.actor2) {
+      const cp = String(c.cast || "")
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean);
+      if (!c.actor1) c.actor1 = cp[0] || "";
+      if (!c.actor2) c.actor2 = cp[1] || "";
+    }
+    if (row.portraitActorCacheFile) {
+      c.portraitActorURL = "/imagecache/" + row.portraitActorCacheFile;
+    }
+    if (row.portraitActressCacheFile) {
+      c.portraitActressURL = "/imagecache/" + row.portraitActressCacheFile;
+    }
+    if (row.portraitDirectorCacheFile) {
+      c.portraitDirectorURL = "/imagecache/" + row.portraitDirectorCacheFile;
+    }
+    if (row.portraitAuthorCacheFile) {
+      c.portraitAuthorURL = "/imagecache/" + row.portraitAuthorCacheFile;
+    }
+    if (row.portraitArtistCacheFile) {
+      c.portraitArtistURL = "/imagecache/" + row.portraitArtistCacheFile;
+    }
     c.theme = "";
     cards.push(c);
   }
@@ -754,7 +1269,9 @@ async function runScheduledRefresh(opts) {
     }
 
     const url = String(entry.sourceUrl || "").trim();
-    const fp = path.join(IMAGECACHE, entry.cacheFile);
+    const cacheBase =
+      cacheBasenameFromStoredValue(entry.cacheFile) || entry.cacheFile;
+    const fp = path.join(IMAGECACHE, cacheBase);
     if (url) {
       try {
         const imgHdr = opts && opts.imageDownloadHeaders;
@@ -842,6 +1359,60 @@ function libLabel(name) {
   return s || "(unknown library)";
 }
 
+/** Display / sort order for Settings → Cache image breakdown. */
+const IMAGE_KIND_ORDER = [
+  "people",
+  "album",
+  "book",
+  "audiobook",
+  "poster",
+  "logo",
+  "banner",
+  "background",
+  "other",
+];
+
+function emptyKindCounts() {
+  /** @type {Record<string, number>} */
+  const o = {};
+  for (const k of IMAGE_KIND_ORDER) o[k] = 0;
+  return o;
+}
+
+/**
+ * Classify a cached image filename into a dashboard bucket.
+ * @param {string} fname
+ * @param {Set<string>} primarySet
+ * @param {Map<string, string>} posterFileToMediaType cache_file -> media_type
+ */
+function classifyImageKind(fname, primarySet, posterFileToMediaType) {
+  if (!fname || typeof fname !== "string") return "other";
+  if (!/\.(jpe?g|png)$/i.test(fname)) return "other";
+  if (/-logo\.(png|jpe?g)$/i.test(fname)) return "logo";
+  if (/\.png$/i.test(fname)) return "other";
+  if (/-banner\.jpg$/i.test(fname)) return "banner";
+  if (/-(actor|actress|director|author|artist)\.jpg$/i.test(fname))
+    return "people";
+  if (/-art\.jpg$/i.test(fname)) return "background";
+  if (primarySet.has(fname)) {
+    const mt = String(posterFileToMediaType.get(fname) || "movie")
+      .toLowerCase()
+      .trim();
+    if (mt === "album") return "album";
+    if (mt === "ebook") return "book";
+    if (mt === "audiobook") return "audiobook";
+    return "poster";
+  }
+  if (
+    /\.jpe?g$/i.test(fname) &&
+    !/-(art|banner)\.jpg$/i.test(fname) &&
+    !/-(actor|actress|director|author|artist)\.jpg$/i.test(fname)
+  ) {
+    return "poster";
+  }
+  return "other";
+}
+
 /**
  * Stats for Settings → Cache (poster DB, image files by type/library, mp3 themes).
  * @returns {object}
@@ -854,6 +1425,7 @@ function getCacheDashboardStats() {
   let rowsMissing = 0;
 
   const fileToLibrary = new Map();
+  const posterFileToMediaType = new Map();
   for (const e of entries) {
     const lib = libLabel(e.libraryName);
     if (!posterByLib[lib]) {
@@ -867,6 +1439,9 @@ function getCacheDashboardStats() {
     }
     posterByLib[lib].total += 1;
     const mt = String(e.mediaType || "other").toLowerCase() || "other";
+    if (e.cacheFile) {
+      posterFileToMediaType.set(e.cacheFile, mt);
+    }
     if (e.cacheFile && fileOk(e.cacheFile)) {
       rowsValid += 1;
       posterByLib[lib].valid += 1;
@@ -886,6 +1461,11 @@ function getCacheDashboardStats() {
       const base = artM[1] + ".jpg";
       if (fileToLibrary.has(base)) return fileToLibrary.get(base);
     }
+    const bannerM = fname.match(/^(.+)-banner\.jpg$/i);
+    if (bannerM) {
+      const base = bannerM[1] + ".jpg";
+      if (fileToLibrary.has(base)) return fileToLibrary.get(base);
+    }
     const portM = fname.match(
       /^(.+)-(actor|actress|director|author|artist)\.jpg$/i
     );
@@ -893,21 +1473,37 @@ function getCacheDashboardStats() {
       const base = portM[1] + ".jpg";
       if (fileToLibrary.has(base)) return fileToLibrary.get(base);
     }
+    const logoM = fname.match(/^(.+)-logo\.(png|jpe?g)$/i);
+    if (logoM) {
+      const base = logoM[1] + ".jpg";
+      if (fileToLibrary.has(base)) return fileToLibrary.get(base);
+    }
     return "(unassigned)";
   }
 
-  const byCategory = { primary: 0, fanart: 0, portrait: 0, other: 0 };
+  const byCategory = emptyKindCounts();
   const diskByLib = {};
   let imageFiles = 0;
   let imageBytes = 0;
 
-  const portraitRe = /-(actor|actress|director|author|artist)\.jpg$/i;
   const primarySet = new Set(entries.map((e) => e.cacheFile).filter(Boolean));
 
   if (fs.existsSync(IMAGECACHE)) {
     try {
-      for (const fname of fs.readdirSync(IMAGECACHE)) {
-        if (!/\.(jpe?g)$/i.test(fname)) continue;
+      const names = fs.readdirSync(IMAGECACHE).filter((fname) =>
+        /\.(jpe?g|png)$/i.test(fname)
+      );
+      names.sort((a, b) => {
+        const ka = classifyImageKind(a, primarySet, posterFileToMediaType);
+        const kb = classifyImageKind(b, primarySet, posterFileToMediaType);
+        const ia = IMAGE_KIND_ORDER.indexOf(ka);
+        const ib = IMAGE_KIND_ORDER.indexOf(kb);
+        const oa = ia === -1 ? 99 : ia;
+        const ob = ib === -1 ? 99 : ib;
+        if (oa !== ob) return oa - ob;
+        return a.localeCompare(b, undefined, { sensitivity: "base" });
+      });
+      for (const fname of names) {
         const fp = path.join(IMAGECACHE, fname);
         let st;
         try {
@@ -919,24 +1515,18 @@ function getCacheDashboardStats() {
         imageFiles += 1;
         imageBytes += st.size;
 
-        let cat = "other";
-        if (primarySet.has(fname)) cat = "primary";
-        else if (/-art\.jpg$/i.test(fname)) cat = "fanart";
-        else if (portraitRe.test(fname)) cat = "portrait";
-        byCategory[cat] += 1;
+        const kind = classifyImageKind(fname, primarySet, posterFileToMediaType);
+        byCategory[kind] += 1;
 
         const lib = libraryForImageFile(fname);
         if (!diskByLib[lib]) {
           diskByLib[lib] = {
             name: lib,
-            primary: 0,
-            fanart: 0,
-            portrait: 0,
-            other: 0,
+            ...emptyKindCounts(),
             bytes: 0,
           };
         }
-        diskByLib[lib][cat] += 1;
+        diskByLib[lib][kind] += 1;
         diskByLib[lib].bytes += st.size;
       }
     } catch (e) {
@@ -965,6 +1555,7 @@ function getCacheDashboardStats() {
       fileCount: imageFiles,
       totalBytes: imageBytes,
       byCategory,
+      kindOrder: IMAGE_KIND_ORDER.slice(),
       byLibrary: diskLibraries,
     },
     mp3cache: {
@@ -985,4 +1576,10 @@ module.exports = {
   getCacheDashboardStats,
   DEFAULT_FALLBACK_COUNT,
   normalizeCacheFile,
+  getEntryByServerAndApiItemId,
+  shouldSkipSyncItem,
+  cacheBasenameFromStoredValue,
+  fileOk,
+  IMAGE_KIND_ORDER,
+  countRows,
 };
