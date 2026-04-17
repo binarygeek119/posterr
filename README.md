@@ -207,7 +207,7 @@ Get to the settings page in a number of ways:
 
 *The default password is:* **raidisnotabackup**
 
-**Now Showing (this fork):** configure the TMDB movie list at **`/settings/now-showing`** (also linked from **Settings**). The public-style schedule view is at **`/now-showing`** (prefix with `BASEPATH` if you use a reverse-proxy base path). Set a TMDB API key in **Settings → TMDB API** or the **`TMDB_API_KEY`** environment variable.
+**Now Showing (this fork):** configure the TMDB movie list at **`/settings/now-showing`** (also linked from **Settings**). The public-style schedule view is at **`/now-showing`** (prefix with `BASEPATH` if you use a reverse-proxy base path). For reduced animation/scroll load on low-powered devices, use **`/now-showing?lowPower=1`**. Set a TMDB API key in **Settings → TMDB API** or the **`TMDB_API_KEY`** environment variable.
 
 **Ads (this fork):** configure slides and timings at **`/settings/ads`**. The dedicated slideshow is at **`/ads`**; use **seconds per ad** for each slide and **seconds on full `/ads` page before returning home** to auto-navigate back to the home poster view when you want a timed lobby loop.
 

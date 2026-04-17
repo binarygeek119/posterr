@@ -615,12 +615,37 @@
       var nsCycleEmbed = nsUrlQs.get("cycleEmbed") === "1";
       var lowPowerRequested = nsUrlQs.get("lowPower") === "1";
       var lowPowerDetected = false;
+      /**
+       * Auto low-power target device hints.
+       * Add additional lowercase tokens here as needed.
+       */
+      var LOW_POWER_DEVICE_HINTS = [
+        "raspberry pi 1",
+        "raspberry pi 2",
+        "raspberry pi 3",
+        "raspbian",
+        "armv6",
+        "armv7",
+      ];
       try {
-        var mem = Number(navigator && navigator.deviceMemory);
-        var cpu = Number(navigator && navigator.hardwareConcurrency);
-        lowPowerDetected =
-          (Number.isFinite(mem) && mem > 0 && mem <= 1.5) ||
-          (Number.isFinite(cpu) && cpu > 0 && cpu <= 4);
+        var nav = navigator || {};
+        var ua = String(nav.userAgent || "").toLowerCase();
+        var platform = String(nav.platform || "").toLowerCase();
+        var vendor = String(nav.vendor || "").toLowerCase();
+        var uaData = nav.userAgentData || {};
+        var uaBrands = "";
+        if (uaData && Array.isArray(uaData.brands)) {
+          uaBrands = uaData.brands
+            .map(function (b) {
+              return String((b && b.brand) || "");
+            })
+            .join(" ")
+            .toLowerCase();
+        }
+        var deviceFingerprint = [ua, platform, vendor, uaBrands].join(" ");
+        lowPowerDetected = LOW_POWER_DEVICE_HINTS.some(function (hint) {
+          return deviceFingerprint.indexOf(hint) !== -1;
+        });
       } catch (e) {}
       var lowPowerMode = lowPowerRequested || lowPowerDetected;
       if (lowPowerMode && document.body) {
@@ -676,7 +701,6 @@
       var reduceMotion =
         typeof window.matchMedia === "function" &&
         window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      if (lowPowerMode) reduceMotion = true;
       var disableAutoScroll = nsUrlQs.get("autoscroll") === "0";
       /** @type {IntersectionObserver[]} */
       var tickerObservers = [];
