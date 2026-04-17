@@ -463,7 +463,9 @@ function acquireAppLockOrExit() {
         const raw = fs.readFileSync(APP_LOCK_FILE, "utf8");
         const lock = JSON.parse(raw || "{}");
         const lockPid = parseInt(lock.pid, 10);
-        if (!processExists(lockPid)) {
+        // In containers PID 1 is frequently reused across restarts. If a prior
+        // run left a stale lock with our current PID, treat it as stale.
+        if (lockPid === process.pid || !processExists(lockPid)) {
           fs.unlinkSync(APP_LOCK_FILE);
           fs.writeFileSync(APP_LOCK_FILE, payload, { flag: "wx" });
           appLockHeld = true;
