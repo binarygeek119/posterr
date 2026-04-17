@@ -77,12 +77,28 @@
                         </select>
                       </div>
                       <div class="col-md-3 mb-2 js-fixed-field">
-                        <label class="small mb-1">Start date</label>
-                        <input type="date" class="form-control form-control-sm" name="holidayStart" value="<%= r.start ? ("2024-" + String(r.start)) : "" %>">
+                        <label class="small mb-1">Start date (MM-DD)</label>
+                        <input
+                          type="text"
+                          class="form-control form-control-sm"
+                          name="holidayStart"
+                          value="<%= r.start ? String(r.start) : "" %>"
+                          placeholder="12-20"
+                          inputmode="numeric"
+                          pattern="^(0?[1-9]|1[0-2])-(0?[1-9]|[12][0-9]|3[01])$"
+                        >
                       </div>
                       <div class="col-md-3 mb-2 js-fixed-field">
-                        <label class="small mb-1">End date</label>
-                        <input type="date" class="form-control form-control-sm" name="holidayEnd" value="<%= r.end ? ("2024-" + String(r.end)) : "" %>">
+                        <label class="small mb-1">End date (MM-DD)</label>
+                        <input
+                          type="text"
+                          class="form-control form-control-sm"
+                          name="holidayEnd"
+                          value="<%= r.end ? String(r.end) : "" %>"
+                          placeholder="12-31"
+                          inputmode="numeric"
+                          pattern="^(0?[1-9]|1[0-2])-(0?[1-9]|[12][0-9]|3[01])$"
+                        >
                       </div>
                       <div class="col-md-2 mb-2 js-dynamic-field">
                         <label class="small mb-1">Month</label>
@@ -161,12 +177,12 @@
               '</select>' +
             '</div>' +
             '<div class="col-md-3 mb-2 js-fixed-field">' +
-              '<label class="small mb-1">Start date</label>' +
-              '<input type="date" class="form-control form-control-sm" name="holidayStart">' +
+              '<label class="small mb-1">Start date (MM-DD)</label>' +
+              '<input type="text" class="form-control form-control-sm" name="holidayStart" placeholder="12-20" inputmode="numeric" pattern="^(0?[1-9]|1[0-2])-(0?[1-9]|[12][0-9]|3[01])$">' +
             '</div>' +
             '<div class="col-md-3 mb-2 js-fixed-field">' +
-              '<label class="small mb-1">End date</label>' +
-              '<input type="date" class="form-control form-control-sm" name="holidayEnd">' +
+              '<label class="small mb-1">End date (MM-DD)</label>' +
+              '<input type="text" class="form-control form-control-sm" name="holidayEnd" placeholder="12-31" inputmode="numeric" pattern="^(0?[1-9]|1[0-2])-(0?[1-9]|[12][0-9]|3[01])$">' +
             '</div>' +
             '<div class="col-md-2 mb-2 js-dynamic-field">' +
               '<label class="small mb-1">Month</label>' +
