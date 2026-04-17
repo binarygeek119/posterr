@@ -3601,6 +3601,14 @@ function normalizeHolidayMonthDay(raw) {
       return String(mo).padStart(2, "0") + "-" + String(da).padStart(2, "0");
     }
   }
+  const ymd = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (ymd) {
+    const mo = parseInt(ymd[2], 10);
+    const da = parseInt(ymd[3], 10);
+    if (mo >= 1 && mo <= 12 && da >= 1 && da <= 31) {
+      return String(mo).padStart(2, "0") + "-" + String(da).padStart(2, "0");
+    }
+  }
   const dt = new Date(s);
   if (isNaN(dt.getTime())) return "";
   return (
@@ -3840,6 +3848,7 @@ function nowShowingRowMatchesHolidayRule(row, rule) {
 function boostCardsByHolidayRules(cards, activeRules) {
   if (!Array.isArray(cards) || !cards.length) return cards;
   if (!Array.isArray(activeRules) || activeRules.length === 0) return cards;
+  const HOLIDAY_BOOST_COPIES = 4;
   const boost = [];
   for (const card of cards) {
     let matches = false;
@@ -3852,12 +3861,15 @@ function boostCardsByHolidayRules(cards, activeRules) {
     if (matches) boost.push(card);
   }
   if (!boost.length) return cards;
-  return cards.concat(boost, boost);
+  const out = cards.slice();
+  for (let i = 0; i < HOLIDAY_BOOST_COPIES; i++) out.push(...boost);
+  return out;
 }
 
 function boostNowShowingRowsByHolidayRules(rows, activeRules) {
   if (!Array.isArray(rows) || !rows.length) return rows;
   if (!Array.isArray(activeRules) || activeRules.length === 0) return rows;
+  const HOLIDAY_BOOST_COPIES = 4;
   const boost = [];
   for (const row of rows) {
     let matches = false;
@@ -3870,7 +3882,9 @@ function boostNowShowingRowsByHolidayRules(rows, activeRules) {
     if (matches) boost.push({ ...row });
   }
   if (!boost.length) return rows;
-  return rows.concat(boost, boost);
+  const out = rows.slice();
+  for (let i = 0; i < HOLIDAY_BOOST_COPIES; i++) out.push(...boost);
+  return out;
 }
 
 function normalizeLibraryNameFor3d(name) {
