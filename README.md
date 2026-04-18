@@ -49,7 +49,7 @@ For fork support, use GitHub: [https://github.com/binarygeek119/posterr](https:/
  - **TMDB “Now Showing”** list with dedicated **`/now-showing`** view, optional main-poster slides, showtimes, and library fill-in — details under **Display controls (this modified branch)** below.
 
 ### New in this fork (recent)
-These are additions on top of upstream behaviour (current fork **`package.json`** version is **2.0.0**).
+These are additions on top of upstream behaviour (current fork **`package.json`** version is **2.1.0**).
 
 | Area | What changed |
 |------|----------------|

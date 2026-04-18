@@ -1,6 +1,6 @@
 {
   "name": "posterx",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "PosterX — digital media display (fork of Posterr)",
   "main": "index.js",
   "bin": "index.js",
