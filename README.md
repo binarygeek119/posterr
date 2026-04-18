@@ -9,8 +9,8 @@
 ![GitHub stars](https://img.shields.io/github/stars/binarygeek119/posterr?style=flat)
 ![Fork version](https://img.shields.io/github/package-json/v/binarygeek119/posterr?label=version&logoColor=blue)
 ![Last commit](https://img.shields.io/github/last-commit/binarygeek119/posterr)
-![Docker Pulls](https://img.shields.io/docker/pulls/binarygeek119/posterrx)
-![Docker image size](https://img.shields.io/docker/image-size/binarygeek119/posterrx/latest?logo=docker)
+![Docker Pulls](https://img.shields.io/docker/pulls/binarygeek119/posterr)
+![Docker image size](https://img.shields.io/docker/image-size/binarygeek119/posterr/latest?logo=docker)
 ![Platforms](https://img.shields.io/badge/platform-docker-blue)
 [![Upstream wiki](https://img.shields.io/badge/upstream-wiki-informational?logo=github)](https://github.com/petersem/posterr/wiki/Posterr-Configuration)
 
