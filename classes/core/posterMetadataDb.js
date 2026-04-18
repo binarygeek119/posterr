@@ -252,7 +252,7 @@ function logLegacySavedImageHint() {
     if (n > 0) return;
     console.log(
       new Date().toLocaleString() +
-        " Posterr: cached images are still under saved/imagecache; move files to config/cache/imagecache (and mp3cache → config/cache/mp3cache), or copy your old saved/ tree into config/cache/."
+        " PosterX: cached images are still under saved/imagecache; move files to config/cache/imagecache (and mp3cache → config/cache/mp3cache), or copy your old saved/ tree into config/cache/."
     );
   } catch (e) {
     /* ignore */

@@ -1,15 +1,15 @@
-# Posterr — requires Docker Engine 20.10+ for host.docker.internal (Linux).
-# Jellyfin / Emby / Kodi / Plex are reached over HTTP from Posterr settings (no extra container packages).
+# PosterX — requires Docker Engine 20.10+ for host.docker.internal (Linux).
+# Jellyfin / Emby / Kodi / Plex are reached over HTTP from PosterX settings (no extra container packages).
 #
 # Volumes:
 #   config/ — settings.json, cache/, ads/, ads-view/, custom-pictures/, SQLite DBs (mount whole config dir).
-#   Optional: public/custom — legacy uploads; on first run Posterr copies into config/ if those folders are empty.
+#   Optional: public/custom — legacy uploads; on first run PosterX copies into config/ if those folders are empty.
 
 version: "3.8"
 
 services:
   posterr:
-    image: posterr
+    image: posterrx
     container_name: posterr
     build:
       context: .
