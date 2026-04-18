@@ -6,7 +6,7 @@ RUN apk add net-tools
 
 ENV NODE_ENV=production
 
-# Posterr talks to Plex, Jellyfin, Emby, and Kodi over HTTP(S) from settings (no extra image packages).
+# PosterX talks to Plex, Jellyfin, Emby, and Kodi over HTTP(S) from settings (no extra image packages).
 # In Docker, set the media server "host" to a container name on a shared network, or host.docker.internal
 # (see docker-compose.yml extra_hosts and docker-compose.media-servers.example.yml).
 #

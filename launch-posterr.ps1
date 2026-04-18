@@ -17,5 +17,5 @@ $env:POSTERR_SYNC_DEBUG = "true"
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $repoRoot
 
-Write-Host "Starting Posterr from $repoRoot ..."
+Write-Host "Starting PosterX from $repoRoot ..."
 node ".\index.js"

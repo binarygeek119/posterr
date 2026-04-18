@@ -10,5 +10,5 @@ export POSTERR_JELLYFIN_LIBRARY_FIRST_PAGE_TIMEOUT_MS="45000"
 export POSTERR_JELLYFIN_LIBRARY_PAGE_LIMIT="150"
 export POSTERR_SYNC_DEBUG="true"
 
-echo "Starting Posterr from $SCRIPT_DIR ..."
+echo "Starting PosterX from $SCRIPT_DIR ..."
 node "./index.js"
