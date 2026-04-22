@@ -1,4 +1,6 @@
 const axios = require("axios");
+const http = require("http");
+const https = require("https");
 const fs = require("fs");
 const path = require("path");
 const mediaCard = require("./../cards/MediaCard");
@@ -145,6 +147,19 @@ const LIBRARY_ITEMS_FIRST_PAGE_HTTP_RETRIES = (() => {
   return 1;
 })();
 
+/**
+ * Pooled keep-alive agents + explicit Accept-Encoding reduce flaky Node/axios 0.27 “maxContentLength
+ * size of -1 exceeded” errors (misleading message when the response stream aborts; see axios#4806).
+ */
+const _EMBY_JF_HTTP_AGENT = new http.Agent({
+  keepAlive: true,
+  maxSockets: 64,
+});
+const _EMBY_JF_HTTPS_AGENT = new https.Agent({
+  keepAlive: true,
+  maxSockets: 64,
+});
+
 function _axiosErrCode(e) {
   if (!e || typeof e !== "object") return "";
   if (e.code != null) return String(e.code);
@@ -178,6 +193,13 @@ function _axiosErrorIsRetriableNetwork(e) {
     msg.includes("econnreset") ||
     msg.includes("enotfound")
   );
+}
+
+/** Axios 0.27 node adapter: stream abort is often reported as “maxContentLength size of -1 exceeded”. */
+function _axiosErrorIsMisleadingMaxContentLengthAbort(e) {
+  const msg = String((e && e.message) || "").toLowerCase();
+  if (!msg.includes("maxcontentlength")) return false;
+  return msg.includes("-1") || msg.includes("infinity");
 }
 
 /**
@@ -430,15 +452,22 @@ class EmbyJellyfinBase {
     while (true) {
       try {
         const res = await axios.get(url, {
-          headers,
+          headers: {
+            ...headers,
+            "Accept-Encoding": "gzip, deflate",
+            Connection: "keep-alive",
+          },
           timeout: timeoutMs,
+          httpAgent: _EMBY_JF_HTTP_AGENT,
+          httpsAgent: _EMBY_JF_HTTPS_AGENT,
         });
         return res.data;
       } catch (e) {
         const canRetry =
           attempt < maxRetries &&
           (_axiosErrorIsRetriableTimeout(e) ||
-            _axiosErrorIsRetriableNetwork(e));
+            _axiosErrorIsRetriableNetwork(e) ||
+            _axiosErrorIsMisleadingMaxContentLengthAbort(e));
         if (canRetry) {
           attempt++;
           const backoffMs = Math.min(
@@ -2125,7 +2154,8 @@ class EmbyJellyfinBase {
           e &&
           (e.code === "ECONNABORTED" ||
             msg.includes("timeout") ||
-            status >= 500);
+            status >= 500 ||
+            _axiosErrorIsMisleadingMaxContentLengthAbort(e));
         if (isFirstPageFallbackCandidate && isRetriableFirstPageError) {
           const halved = Math.floor(pageLimit / 2);
           firstPageLimit = Math.max(
